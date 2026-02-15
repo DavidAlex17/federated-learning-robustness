@@ -1,10 +1,4 @@
+pytest
 numpy
-pandas
-torch
-torchvision
 matplotlib
-scikit-learn
-scipy
-flwr[simulation]
-flwr-datasets
 pyyaml
