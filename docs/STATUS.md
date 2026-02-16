@@ -2,11 +2,12 @@
 
 ## What currently works
 
-- A fast, config-driven smoke-run entrypoint exists at `experiments/run_smoke.py`.
+- A fast, config-driven smoke-run entrypoint exists at `experiments/run_smoke.py`, backed by reusable `experiments/runner.py`.
 - The smoke run uses `cfg/project.yaml` defaults (clients, rounds, seed) with bounded tiny settings for fast execution.
 - Smoke artifacts are written under run-specific directories:
   - `experiments/results/<run_id>/metrics.csv`
-  - `experiments/plots/<run_id>/accuracy.png`
+  - `experiments/plots/<run_id>/smoke_synth_val_acc.png`
+- Metrics schema is documented in `experiments/metrics_schema.md` and used by the plotting path.
 - A pytest smoke test (`tests/test_smoke.py`) validates end-to-end execution and artifact creation.
 
 ## Legacy / outdated components
@@ -22,7 +23,7 @@
 3. Expand plotting to method-separated figures and add summary comparison plots without clutter.
 4. Add additional tests for config override behavior and deterministic seeds.
 
-## Assumptions (Step 1)
+## Assumptions (Step 2)
 
 - The smoke run is intentionally lightweight and uses a deterministic synthetic loop so tests remain fast and robust in constrained environments.
 - Full Flower/FEMNIST execution is preserved as legacy/prototype code and not required for Step 1 completion.

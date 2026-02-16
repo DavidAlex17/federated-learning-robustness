@@ -21,10 +21,10 @@ def test_smoke_run_produces_artifacts() -> None:
     subprocess.run(cmd, check=True, cwd=REPO_ROOT)
 
     metrics_path = REPO_ROOT / "experiments" / "results" / RUN_ID / "metrics.csv"
-    plot_path = REPO_ROOT / "experiments" / "plots" / RUN_ID / "accuracy.png"
+    plot_path = REPO_ROOT / "experiments" / "plots" / RUN_ID / "smoke_synth_val_acc.png"
 
     assert metrics_path.exists(), "metrics.csv was not created"
-    assert plot_path.exists(), "accuracy.png was not created"
+    assert plot_path.exists(), "smoke_synth_val_acc.png was not created"
 
     with metrics_path.open("r", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
