@@ -60,11 +60,12 @@ def _build_partitioned_data(config: dict) -> PartitionBundle:
         transforms.Normalize((0.1307,), (0.3081,)),
     ])
 
+    dataset_used = "mnist"
     try:
         train_raw = datasets.MNIST(root="data", train=True, download=True, transform=transform)
         test_raw = datasets.MNIST(root="data", train=False, download=True, transform=transform)
-    except RuntimeError as exc:
-        print(f"[fedavg_tiny] MNIST download unavailable, falling back to FakeData: {exc}")
+    except RuntimeError:
+        dataset_used = "fakedata"
         train_raw = datasets.FakeData(
             size=max(train_cap, 1),
             image_size=(1, 28, 28),
@@ -79,6 +80,8 @@ def _build_partitioned_data(config: dict) -> PartitionBundle:
             transform=transform,
             random_offset=seed + 1,
         )
+
+    print(f"dataset={dataset_used}")
 
     train_subset = _cap_dataset(train_raw, train_cap, seed=seed)
     test_subset = _cap_dataset(test_raw, test_cap, seed=seed + 1)

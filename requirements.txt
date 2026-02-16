@@ -2,6 +2,6 @@ pytest
 numpy
 matplotlib
 pyyaml
-flwr[simulation]
+flwr[simulation]~=1.26.1
 torch
 torchvision
