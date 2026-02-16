@@ -1,5 +1,22 @@
 # Empirical Robustness Evaluation of Federated Learning under Poisoning Attacks
 
+## Project Status
+
+This repository is currently in a transitional research-harness phase. For current capabilities, legacy components, and planned milestones, see **[docs/STATUS.md](docs/STATUS.md)**.
+
+## Quickstart: Smoke Run
+
+```bash
+PYTHONPATH=. python experiments/run_smoke.py --run-id smoke-local --clean
+```
+
+This generates lightweight artifacts at:
+
+- `experiments/results/smoke-local/metrics.csv`
+- `experiments/plots/smoke-local/smoke_synth_val_acc.png`
+
+Metrics format is documented in **[experiments/metrics_schema.md](experiments/metrics_schema.md)**.
+
 This repository presents an empirical analysis of robustness and failure modes in federated learning under poisoning attacks. Federated learning is treated as the experimental environment, poisoning attacks as adversarial stressors, and the PID (Proportional–Integral–Derivative) mechanism is evaluated as a case-study anomaly-detection defense at the server.
 
 The focus is on understanding system behavior and limitations under realistic assumptions, not on proposing new algorithms or achieving state-of-the-art accuracy.
