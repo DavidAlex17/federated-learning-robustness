@@ -2,3 +2,6 @@ pytest
 numpy
 matplotlib
 pyyaml
+flwr[simulation]
+torch
+torchvision

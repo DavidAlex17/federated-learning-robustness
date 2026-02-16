@@ -15,6 +15,17 @@ This generates lightweight artifacts at:
 - `experiments/results/smoke-local/metrics.csv`
 - `experiments/plots/smoke-local/smoke_synth_val_acc.png`
 
+## Quickstart: Tiny FedAvg (Flower + PyTorch)
+
+```bash
+PYTHONPATH=. python experiments/run_fedavg.py --run-id fedavg-local --clean
+```
+
+This generates:
+
+- `experiments/results/fedavg-local/metrics.csv`
+- `experiments/plots/fedavg-local/fedavg_tiny_val_acc.png`
+
 Metrics format is documented in **[experiments/metrics_schema.md](experiments/metrics_schema.md)**.
 
 This repository presents an empirical analysis of robustness and failure modes in federated learning under poisoning attacks. Federated learning is treated as the experimental environment, poisoning attacks as adversarial stressors, and the PID (Proportional–Integral–Derivative) mechanism is evaluated as a case-study anomaly-detection defense at the server.

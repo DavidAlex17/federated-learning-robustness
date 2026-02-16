@@ -1,4 +1,4 @@
-"""Reusable lightweight experiment runner for synthetic/fast experiments."""
+"""Reusable lightweight experiment runner for synthetic and FL experiments."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
+from experiments.methods import run_fedavg_tiny
 from experiments.plot_metrics import plot_single_method
 
 METRIC_COLUMNS = [
@@ -28,14 +29,7 @@ def _write_metrics_csv(metrics: list[dict], metrics_path: Path) -> None:
         writer.writerows(metrics)
 
 
-def run_experiment(
-    config: dict,
-    run_id: str,
-    out_dir_results: str,
-    out_dir_plots: str,
-    method: str,
-) -> None:
-    """Run a small experiment and emit metrics + one method plot."""
+def _run_smoke_synth(config: dict) -> list[dict]:
     rounds = int(config.get("rounds", 3))
     seed = int(config.get("seed", 42))
     client_fraction = float(config.get("client_fraction", 1.0))
@@ -63,6 +57,23 @@ def run_experiment(
                 "time_round_sec": round(elapsed, 6),
             }
         )
+    return metrics
+
+
+def run_experiment(
+    config: dict,
+    run_id: str,
+    out_dir_results: str,
+    out_dir_plots: str,
+    method: str,
+) -> None:
+    """Run selected method and emit metrics + one method plot."""
+    if method == "smoke_synth":
+        metrics = _run_smoke_synth(config)
+    elif method == "fedavg_tiny":
+        metrics = run_fedavg_tiny(config)
+    else:
+        raise ValueError(f"Unsupported method: {method}")
 
     results_root = Path(out_dir_results) / run_id
     plots_root = Path(out_dir_plots) / run_id

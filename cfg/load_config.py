@@ -11,17 +11,37 @@ def validate_and_fill_defaults(cfg):
     assumptions = []
 
     defaults = {
+        "method": "smoke_synth",
         "seed": 42,
         "rounds": 5,
         "clients": 10,
         "client_fraction": 1.0,
         "output_root": "experiments",
+        "local_epochs": 1,
+        "batch_size": 32,
+        "lr": 0.01,
     }
 
     for key, value in defaults.items():
         if key not in cfg:
             cfg[key] = value
             assumptions.append(f"missing '{key}' -> using default {value}")
+
+    dataset_cfg = cfg.get("dataset", {})
+    if not isinstance(dataset_cfg, dict):
+        dataset_cfg = {}
+        assumptions.append("invalid 'dataset' section -> using defaults")
+
+    dataset_defaults = {
+        "name": "mnist",
+        "train_samples_cap": 1000,
+        "test_samples_cap": 200,
+    }
+    for key, value in dataset_defaults.items():
+        if key not in dataset_cfg:
+            dataset_cfg[key] = value
+            assumptions.append(f"missing 'dataset.{key}' -> using default {value}")
+    cfg["dataset"] = dataset_cfg
 
     plot_cfg = cfg.get("plot", {})
     if not isinstance(plot_cfg, dict):
