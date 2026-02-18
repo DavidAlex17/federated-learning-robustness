@@ -3,38 +3,63 @@ data_dir: data
 results_dir: experiments/results
 plots_dir: experiments/plots
 
-# Baseline run defaults
-clients: 10
-rounds: 5
+# Experiment defaults
+method: smoke_synth
+clients: 4
+rounds: 3
 seed: 42
+client_fraction: 1.0
 
-# Byzantine fault tolerance settings
+# Tiny local optimization defaults
+local_epochs: 1
+batch_size: 32
+lr: 0.01
+
+# Dataset defaults for fast experiments
+dataset:
+  name: mnist
+  train_samples_cap: 1000
+  test_samples_cap: 200
+
+# Plot defaults
+plot:
+  dpi: 120
+  figsize: [6, 4]
+
+# Server aggregation defaults
+server:
+  aggregator: fedavg  # fedavg, trimmed_mean, multi_krum
+  trim_ratio: 0.1
+  f: 1
+  m: null
+
+# Byzantine fault tolerance settings (legacy/prototype)
 byzantine_defense:
   enabled: true
   strategy: "adaptive"  # conservative, balanced, adaptive
   trust_threshold: 0.5
-  
+
   # PID defense parameters
   pid_gains:
     kp: 1.0  # Proportional gain
     ki: 0.1  # Integral gain
     kd: 0.05 # Derivative gain
-  
+
   # Krum algorithm parameters
   krum_params:
     max_byzantines: 2
-    
+
   # Bulyan algorithm parameters
   bulyan_params:
     max_byzantines: 2
-    
+
   # Robust Federated Aggregation parameters
   rfa_params:
     trim_ratio: 0.2
     geometric_median_tolerance: 1e-6
     max_iterations: 100
 
-# Attack simulation settings
+# Attack simulation settings (legacy/prototype)
 attack_settings:
   enabled: false
   attack_type: "label_flipping"  # label_flipping, gradient_ascent, backdoor
