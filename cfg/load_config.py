@@ -43,6 +43,25 @@ def validate_and_fill_defaults(cfg):
             assumptions.append(f"missing 'dataset.{key}' -> using default {value}")
     cfg["dataset"] = dataset_cfg
 
+    server_cfg = cfg.get("server", {})
+    if not isinstance(server_cfg, dict):
+        server_cfg = {}
+        assumptions.append("invalid 'server' section -> using defaults")
+
+    if "aggregator" not in server_cfg:
+        server_cfg["aggregator"] = "fedavg"
+        assumptions.append("missing 'server.aggregator' -> using default fedavg")
+    if "trim_ratio" not in server_cfg:
+        server_cfg["trim_ratio"] = 0.1
+        assumptions.append("missing 'server.trim_ratio' -> using default 0.1")
+    if "f" not in server_cfg:
+        server_cfg["f"] = 1
+        assumptions.append("missing 'server.f' -> using default 1")
+    if "m" not in server_cfg:
+        server_cfg["m"] = None
+
+    cfg["server"] = server_cfg
+
     plot_cfg = cfg.get("plot", {})
     if not isinstance(plot_cfg, dict):
         plot_cfg = {}

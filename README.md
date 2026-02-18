@@ -24,7 +24,14 @@ PYTHONPATH=. python experiments/run_fedavg.py --run-id fedavg-local --clean
 This generates:
 
 - `experiments/results/fedavg-local/metrics.csv`
-- `experiments/plots/fedavg-local/fedavg_tiny_val_acc.png`
+- `experiments/plots/fedavg-local/fedavg_tiny_fedavg_val_acc.png`
+
+Aggregator variants:
+
+```bash
+PYTHONPATH=. python experiments/run_fedavg.py --run-id fedavg-trim --clean --aggregator trimmed_mean
+PYTHONPATH=. python experiments/run_fedavg.py --run-id fedavg-krum --clean --aggregator multi_krum
+```
 
 Metrics format is documented in **[experiments/metrics_schema.md](experiments/metrics_schema.md)**.
 

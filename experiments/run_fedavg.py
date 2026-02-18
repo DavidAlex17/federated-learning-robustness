@@ -19,6 +19,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-id", type=str, default=None, help="Run identifier")
     parser.add_argument("--clean", action="store_true", help="Delete run outputs before writing")
     parser.add_argument("--rounds", type=int, default=None, help="Optional rounds override")
+    parser.add_argument("--aggregator", type=str, default=None, help="Optional aggregator override")
     parser.add_argument("--config", type=str, default=None, help="Optional config path")
     return parser.parse_args()
 
@@ -28,6 +29,8 @@ def main() -> None:
     cfg = load_cfg(args.config)
     if args.rounds is not None:
         cfg["rounds"] = args.rounds
+    if args.aggregator is not None:
+        cfg.setdefault("server", {})["aggregator"] = args.aggregator
 
     run_id = args.run_id or f"fedavg-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}"
     results_root = Path(cfg["results_dir"]) / run_id
@@ -47,7 +50,8 @@ def main() -> None:
 
     print(f"run_id={run_id}")
     print(f"metrics={results_root / 'metrics.csv'}")
-    print(f"plot={plots_root / 'fedavg_tiny_val_acc.png'}")
+    agg = cfg.get('server', {}).get('aggregator', 'fedavg')
+    print(f"plot={plots_root / f'fedavg_tiny_{agg}_val_acc.png'}")
 
 
 if __name__ == "__main__":

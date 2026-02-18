@@ -1,34 +1,37 @@
-"""Tiny FedAvg backend using Flower + PyTorch on capped MNIST."""
+"""Tiny FL backend using Flower + PyTorch on capped MNIST."""
 
 from __future__ import annotations
 
+import csv
 import random
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
 
 import flwr as fl
 import numpy as np
 import torch
 import torch.nn as nn
+import yaml
+from flwr.common import ndarrays_to_parameters, parameters_to_ndarrays
 from torch.utils.data import DataLoader, Subset
 from torchvision import datasets, transforms
+
+from framework.aggregators import fedavg, multi_krum, trimmed_mean
 
 
 @dataclass
 class PartitionBundle:
     train_parts: list[Subset]
     test_set: Subset
+    dataset_used: str
 
 
 class TinyMLP(nn.Module):
     def __init__(self) -> None:
         super().__init__()
-        self.net = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(28 * 28, 64),
-            nn.ReLU(),
-            nn.Linear(64, 10),
-        )
+        self.net = nn.Sequential(nn.Flatten(), nn.Linear(28 * 28, 64), nn.ReLU(), nn.Linear(64, 10))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x)
@@ -55,10 +58,7 @@ def _build_partitioned_data(config: dict) -> PartitionBundle:
     num_clients = int(config.get("clients", 4))
     seed = int(config.get("seed", 42))
 
-    transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.1307,), (0.3081,)),
-    ])
+    transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
 
     dataset_used = "mnist"
     try:
@@ -67,18 +67,10 @@ def _build_partitioned_data(config: dict) -> PartitionBundle:
     except RuntimeError:
         dataset_used = "fakedata"
         train_raw = datasets.FakeData(
-            size=max(train_cap, 1),
-            image_size=(1, 28, 28),
-            num_classes=10,
-            transform=transform,
-            random_offset=seed,
+            size=max(train_cap, 1), image_size=(1, 28, 28), num_classes=10, transform=transform, random_offset=seed
         )
         test_raw = datasets.FakeData(
-            size=max(test_cap, 1),
-            image_size=(1, 28, 28),
-            num_classes=10,
-            transform=transform,
-            random_offset=seed + 1,
+            size=max(test_cap, 1), image_size=(1, 28, 28), num_classes=10, transform=transform, random_offset=seed + 1
         )
 
     print(f"dataset={dataset_used}")
@@ -92,7 +84,7 @@ def _build_partitioned_data(config: dict) -> PartitionBundle:
     split_indices = np.array_split(train_indices, num_clients)
     train_parts = [Subset(train_raw, idxs.tolist()) for idxs in split_indices]
 
-    return PartitionBundle(train_parts=train_parts, test_set=test_subset)
+    return PartitionBundle(train_parts=train_parts, test_set=test_subset, dataset_used=dataset_used)
 
 
 def _get_params(model: nn.Module) -> list[np.ndarray]:
@@ -109,8 +101,7 @@ def _train_one_epoch(model: nn.Module, loader: DataLoader, lr: float, device: st
     model.train()
     criterion = nn.CrossEntropyLoss()
     opt = torch.optim.SGD(model.parameters(), lr=lr)
-    loss_sum = 0.0
-    n = 0
+    loss_sum, n = 0.0, 0
     for x, y in loader:
         x, y = x.to(device), y.to(device)
         opt.zero_grad()
@@ -127,9 +118,7 @@ def _train_one_epoch(model: nn.Module, loader: DataLoader, lr: float, device: st
 def _evaluate(model: nn.Module, loader: DataLoader, device: str) -> tuple[float, float]:
     model.eval()
     criterion = nn.CrossEntropyLoss()
-    loss_sum = 0.0
-    correct = 0
-    n = 0
+    loss_sum, correct, n = 0.0, 0, 0
     with torch.no_grad():
         for x, y in loader:
             x, y = x.to(device), y.to(device)
@@ -144,14 +133,7 @@ def _evaluate(model: nn.Module, loader: DataLoader, device: str) -> tuple[float,
 
 
 class MnistClient(fl.client.NumPyClient):
-    def __init__(
-        self,
-        cid: int,
-        train_subset: Subset,
-        test_subset: Subset,
-        config: dict,
-    ) -> None:
-        self.cid = cid
+    def __init__(self, cid: int, train_subset: Subset, test_subset: Subset, config: dict) -> None:
         self.device = "cpu"
         self.model = TinyMLP().to(self.device)
         self.lr = float(config.get("lr", 0.01))
@@ -165,9 +147,7 @@ class MnistClient(fl.client.NumPyClient):
 
     def fit(self, parameters, config):
         _set_params(self.model, parameters)
-        losses = []
-        for _ in range(self.local_epochs):
-            losses.append(_train_one_epoch(self.model, self.train_loader, self.lr, self.device))
+        losses = [_train_one_epoch(self.model, self.train_loader, self.lr, self.device) for _ in range(self.local_epochs)]
         mean_loss = float(np.mean(losses)) if losses else 0.0
         return _get_params(self.model), len(self.train_loader.dataset), {"train_loss": mean_loss}
 
@@ -177,11 +157,19 @@ class MnistClient(fl.client.NumPyClient):
         return float(val_loss), len(self.test_loader.dataset), {"val_acc": float(val_acc)}
 
 
-class MetricsFedAvg(fl.server.strategy.FedAvg):
-    def __init__(self, client_fraction: float, **kwargs):
+class RobustFedStrategy(fl.server.strategy.FedAvg):
+    def __init__(self, client_fraction: float, aggregator_cfg: dict, **kwargs):
         super().__init__(**kwargs)
         self.client_fraction = client_fraction
+        self.aggregator = aggregator_cfg.get("aggregator", "fedavg")
+        self.trim_ratio = float(aggregator_cfg.get("trim_ratio", 0.1))
+        self.f = int(aggregator_cfg.get("f", 1))
+        self.m = aggregator_cfg.get("m", None)
+        if self.m is not None:
+            self.m = int(self.m)
+
         self.round_metrics: list[dict] = []
+        self.agg_debug: list[dict] = []
         self._round_starts: dict[int, float] = {}
         self._train_loss_by_round: dict[int, float] = {}
 
@@ -189,21 +177,68 @@ class MetricsFedAvg(fl.server.strategy.FedAvg):
         self._round_starts[server_round] = time.perf_counter()
         return super().configure_fit(server_round, parameters, client_manager)
 
+    def _aggregate_custom(self, server_round: int, results):
+        ndarrays_by_client = [parameters_to_ndarrays(res.parameters) for _, res in results]
+        vectors = [np.concatenate([a.ravel() for a in arrs]) for arrs in ndarrays_by_client]
+        n_clients_total = len(vectors)
+
+        if self.aggregator == "fedavg":
+            weights = [res.num_examples for _, res in results]
+            agg_vec = fedavg(vectors, weights=weights)
+            n_used = n_clients_total
+            n_selected = n_clients_total
+        elif self.aggregator == "trimmed_mean":
+            agg_vec = trimmed_mean(vectors, trim_ratio=self.trim_ratio)
+            k = int(np.floor(self.trim_ratio * n_clients_total))
+            n_used = max(1, n_clients_total - 2 * k)
+            n_selected = n_used
+        elif self.aggregator == "multi_krum":
+            neighbor_count = n_clients_total - self.f - 2
+            m = self.m if self.m is not None else neighbor_count
+            m = max(1, min(m, n_clients_total))
+            agg_vec = multi_krum(vectors, f=self.f, m=m)
+            n_used = n_clients_total
+            n_selected = m
+        else:
+            raise ValueError(f"Unsupported aggregator: {self.aggregator}")
+
+        template = ndarrays_by_client[0]
+        rebuilt = []
+        offset = 0
+        for arr in template:
+            size = int(np.prod(arr.shape))
+            rebuilt_arr = agg_vec[offset : offset + size].reshape(arr.shape).astype(arr.dtype)
+            rebuilt.append(rebuilt_arr)
+            offset += size
+
+        self.agg_debug.append(
+            {
+                "round": server_round,
+                "aggregator": self.aggregator,
+                "n_clients_total": n_clients_total,
+                "n_clients_used": n_used,
+                "n_selected": n_selected,
+                "trim_ratio": self.trim_ratio if self.aggregator == "trimmed_mean" else "",
+            }
+        )
+        return ndarrays_to_parameters(rebuilt)
+
     def aggregate_fit(self, server_round, results, failures):
-        total_examples = 0
-        weighted_loss = 0.0
+        total_examples, weighted_loss = 0, 0.0
         for _, fit_res in results:
             n = fit_res.num_examples
             total_examples += n
             weighted_loss += n * float(fit_res.metrics.get("train_loss", 0.0))
         self._train_loss_by_round[server_round] = weighted_loss / max(total_examples, 1)
-        return super().aggregate_fit(server_round, results, failures)
+
+        if not results:
+            return None, {}
+        params = self._aggregate_custom(server_round, results)
+        return params, {}
 
     def aggregate_evaluate(self, server_round, results, failures):
         agg_loss, agg_metrics = super().aggregate_evaluate(server_round, results, failures)
-
-        total_examples = 0
-        weighted_acc = 0.0
+        total_examples, weighted_acc = 0, 0.0
         for _, eval_res in results:
             n = eval_res.num_examples
             total_examples += n
@@ -226,14 +261,47 @@ class MetricsFedAvg(fl.server.strategy.FedAvg):
         return agg_loss, agg_metrics
 
 
-def run_fedavg_tiny(config: dict) -> list[dict]:
-    """Run tiny FedAvg and return metrics rows in shared schema."""
+def _write_agg_debug(path: Path, rows: list[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fields = ["round", "aggregator", "n_clients_total", "n_clients_used", "n_selected", "trim_ratio"]
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _write_run_meta(path: Path, config: dict, dataset_used: str, aggregator_cfg: dict) -> None:
+    dataset_cfg = config.get("dataset", {})
+    meta = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "method": "fedavg_tiny",
+        "aggregator": aggregator_cfg.get("aggregator", "fedavg"),
+        "trim_ratio": aggregator_cfg.get("trim_ratio", 0.1),
+        "f": aggregator_cfg.get("f", 1),
+        "m": aggregator_cfg.get("m", None),
+        "dataset_used": dataset_used,
+        "seed": int(config.get("seed", 42)),
+        "rounds": int(config.get("rounds", 3)),
+        "clients": int(config.get("clients", 4)),
+        "client_fraction": float(config.get("client_fraction", 1.0)),
+        "train_samples_cap": int(dataset_cfg.get("train_samples_cap", 1000)),
+        "test_samples_cap": int(dataset_cfg.get("test_samples_cap", 200)),
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        yaml.safe_dump(meta, f, sort_keys=False)
+
+
+def run_fedavg_tiny(config: dict, run_id: str, out_dir_results: str) -> tuple[list[dict], str]:
+    """Run tiny FL with configurable robust aggregation; return metrics and plot tag."""
     _set_global_seed(int(config.get("seed", 42)))
 
     rounds = int(config.get("rounds", 2))
     num_clients = int(config.get("clients", 4))
     client_fraction = float(config.get("client_fraction", 1.0))
     fit_clients = max(1, int(np.ceil(num_clients * client_fraction)))
+    server_cfg = config.get("server", {})
+    aggregator = server_cfg.get("aggregator", "fedavg")
 
     data = _build_partitioned_data(config)
 
@@ -242,19 +310,12 @@ def run_fedavg_tiny(config: dict) -> list[dict]:
             cid = int(context_or_cid.node_config.get("partition-id", 0))
         else:
             cid = int(context_or_cid)
+        client = MnistClient(cid=cid, train_subset=data.train_parts[cid], test_subset=data.test_set, config=config)
+        return client.to_client() if hasattr(client, "to_client") else client
 
-        client = MnistClient(
-            cid=cid,
-            train_subset=data.train_parts[cid],
-            test_subset=data.test_set,
-            config=config,
-        )
-        if hasattr(client, "to_client"):
-            return client.to_client()
-        return client
-
-    strategy = MetricsFedAvg(
+    strategy = RobustFedStrategy(
         client_fraction=client_fraction,
+        aggregator_cfg=server_cfg,
         fraction_fit=client_fraction,
         fraction_evaluate=client_fraction,
         min_fit_clients=fit_clients,
@@ -270,4 +331,8 @@ def run_fedavg_tiny(config: dict) -> list[dict]:
         client_resources={"num_cpus": 1, "num_gpus": 0},
     )
 
-    return strategy.round_metrics
+    results_root = Path(out_dir_results) / run_id
+    _write_run_meta(results_root / "run_meta.yaml", config=config, dataset_used=data.dataset_used, aggregator_cfg=server_cfg)
+    _write_agg_debug(results_root / "agg_debug.csv", strategy.agg_debug)
+
+    return strategy.round_metrics, f"fedavg_tiny_{aggregator}"

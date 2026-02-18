@@ -26,6 +26,13 @@ plot:
   dpi: 120
   figsize: [6, 4]
 
+# Server aggregation defaults
+server:
+  aggregator: fedavg  # fedavg, trimmed_mean, multi_krum
+  trim_ratio: 0.1
+  f: 1
+  m: null
+
 # Byzantine fault tolerance settings (legacy/prototype)
 byzantine_defense:
   enabled: true

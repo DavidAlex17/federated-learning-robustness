@@ -68,10 +68,11 @@ def run_experiment(
     method: str,
 ) -> None:
     """Run selected method and emit metrics + one method plot."""
+    plot_method = method
     if method == "smoke_synth":
         metrics = _run_smoke_synth(config)
     elif method == "fedavg_tiny":
-        metrics = run_fedavg_tiny(config)
+        metrics, plot_method = run_fedavg_tiny(config, run_id=run_id, out_dir_results=out_dir_results)
     else:
         raise ValueError(f"Unsupported method: {method}")
 
@@ -83,7 +84,7 @@ def run_experiment(
     plot_single_method(
         metrics_csv_path=metrics_path,
         out_dir=plots_root,
-        method=method,
+        method=plot_method,
         dpi=int(config.get("plot", {}).get("dpi", 120)),
         figsize=tuple(config.get("plot", {}).get("figsize", [6, 4])),
     )
