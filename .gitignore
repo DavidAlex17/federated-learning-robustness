@@ -1,5 +1,30 @@
+# Python
 __pycache__/
-*.pyc
-.ipynb_checkpoints/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
 .venv/
+venv/
 .env
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Experiment artifacts (do not commit)
+experiments/results/
+experiments/plots/
+
+# Data (if you add downloads later)
+data/raw/
+data/processed/
