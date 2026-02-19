@@ -33,6 +33,15 @@ server:
   f: 1
   m: null
 
+# Attack defaults (OFF by default)
+attack:
+  enabled: false
+  type: signflip
+  malicious_fraction: 0.0
+  scale: 1.0
+  seed: 42
+  target: update
+
 # Byzantine fault tolerance settings (legacy/prototype)
 byzantine_defense:
   enabled: true

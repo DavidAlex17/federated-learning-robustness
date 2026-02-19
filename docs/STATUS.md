@@ -10,6 +10,7 @@
 - Metrics schema is documented in `experiments/metrics_schema.md` and used by the plotting path.
 - A tiny Flower + PyTorch backend (`method=fedavg_tiny`) is available through `experiments/run_fedavg.py` for small reproducible FL runs on capped MNIST.
 - FedAvg Tiny supports in-repo robust aggregators (`fedavg`, `trimmed_mean`, `multi_krum`) and writes provenance files (`run_meta.yaml`, `agg_debug.csv`).
+- FedAvg Tiny includes an optional deterministic sign-flip attack (off by default) and writes `attack_debug.csv` for round-level participation diagnostics.
 - A pytest smoke test (`tests/test_smoke.py`) validates end-to-end execution and artifact creation.
 
 ## Legacy / outdated components

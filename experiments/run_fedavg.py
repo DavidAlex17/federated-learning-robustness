@@ -20,6 +20,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--clean", action="store_true", help="Delete run outputs before writing")
     parser.add_argument("--rounds", type=int, default=None, help="Optional rounds override")
     parser.add_argument("--aggregator", type=str, default=None, help="Optional aggregator override")
+    parser.add_argument("--attack", action="store_true", help="Enable sign-flip attack")
+    parser.add_argument("--malicious-fraction", type=float, default=None, help="Override attack malicious fraction")
+    parser.add_argument("--attack-scale", type=float, default=None, help="Override attack scale")
     parser.add_argument("--config", type=str, default=None, help="Optional config path")
     return parser.parse_args()
 
@@ -31,6 +34,12 @@ def main() -> None:
         cfg["rounds"] = args.rounds
     if args.aggregator is not None:
         cfg.setdefault("server", {})["aggregator"] = args.aggregator
+    if args.attack:
+        cfg.setdefault("attack", {})["enabled"] = True
+    if args.malicious_fraction is not None:
+        cfg.setdefault("attack", {})["malicious_fraction"] = args.malicious_fraction
+    if args.attack_scale is not None:
+        cfg.setdefault("attack", {})["scale"] = args.attack_scale
 
     run_id = args.run_id or f"fedavg-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}"
     results_root = Path(cfg["results_dir"]) / run_id

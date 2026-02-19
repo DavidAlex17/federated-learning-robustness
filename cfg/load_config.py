@@ -62,6 +62,28 @@ def validate_and_fill_defaults(cfg):
 
     cfg["server"] = server_cfg
 
+    attack_cfg = cfg.get("attack", {})
+    if not isinstance(attack_cfg, dict):
+        attack_cfg = {}
+        assumptions.append("invalid 'attack' section -> using defaults")
+
+    attack_defaults = {
+        "enabled": False,
+        "type": "signflip",
+        "malicious_fraction": 0.0,
+        "scale": 1.0,
+        "target": "update",
+    }
+    for key, value in attack_defaults.items():
+        if key not in attack_cfg:
+            attack_cfg[key] = value
+            assumptions.append(f"missing 'attack.{key}' -> using default {value}")
+    if "seed" not in attack_cfg:
+        attack_cfg["seed"] = int(cfg.get("seed", 42))
+        assumptions.append("missing 'attack.seed' -> using global seed")
+
+    cfg["attack"] = attack_cfg
+
     plot_cfg = cfg.get("plot", {})
     if not isinstance(plot_cfg, dict):
         plot_cfg = {}

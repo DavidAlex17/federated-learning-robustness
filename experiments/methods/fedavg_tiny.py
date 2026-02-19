@@ -28,6 +28,24 @@ class PartitionBundle:
     dataset_used: str
 
 
+def select_malicious_client_ids(num_clients: int, malicious_fraction: float, seed: int) -> set[int]:
+    """Select a deterministic malicious client-id set."""
+    malicious_count = int(np.floor(max(0.0, min(1.0, malicious_fraction)) * num_clients))
+    rng = np.random.default_rng(seed)
+    ids = rng.permutation(num_clients)[:malicious_count]
+    return set(int(i) for i in ids)
+
+
+def apply_signflip_attack(old_params: list[np.ndarray], new_params: list[np.ndarray], scale: float) -> list[np.ndarray]:
+    """Apply sign-flip to parameter update: old + (-scale * (new-old))."""
+    attacked = []
+    for old, new in zip(old_params, new_params):
+        update = new - old
+        attacked_update = -float(scale) * update
+        attacked.append(old + attacked_update)
+    return attacked
+
+
 class TinyMLP(nn.Module):
     def __init__(self) -> None:
         super().__init__()
@@ -133,7 +151,20 @@ def _evaluate(model: nn.Module, loader: DataLoader, device: str) -> tuple[float,
 
 
 class MnistClient(fl.client.NumPyClient):
-    def __init__(self, cid: int, train_subset: Subset, test_subset: Subset, config: dict) -> None:
+    def __init__(
+        self,
+        cid: int,
+        train_subset: Subset,
+        test_subset: Subset,
+        config: dict,
+        malicious_ids: set[int],
+        attack_cfg: dict,
+    ) -> None:
+        self.cid = cid
+        self.is_malicious = cid in malicious_ids and bool(attack_cfg.get("enabled", False))
+        self.attack_type = str(attack_cfg.get("type", "signflip"))
+        self.attack_scale = float(attack_cfg.get("scale", 1.0))
+
         self.device = "cpu"
         self.model = TinyMLP().to(self.device)
         self.lr = float(config.get("lr", 0.01))
@@ -146,10 +177,22 @@ class MnistClient(fl.client.NumPyClient):
         return _get_params(self.model)
 
     def fit(self, parameters, config):
-        _set_params(self.model, parameters)
+        old_params = [np.array(p, copy=True) for p in parameters]
+        _set_params(self.model, old_params)
         losses = [_train_one_epoch(self.model, self.train_loader, self.lr, self.device) for _ in range(self.local_epochs)]
         mean_loss = float(np.mean(losses)) if losses else 0.0
-        return _get_params(self.model), len(self.train_loader.dataset), {"train_loss": mean_loss}
+        new_params = _get_params(self.model)
+
+        if self.is_malicious and self.attack_type == "signflip":
+            returned_params = apply_signflip_attack(old_params, new_params, self.attack_scale)
+        else:
+            returned_params = new_params
+
+        return returned_params, len(self.train_loader.dataset), {
+            "train_loss": mean_loss,
+            "client_id": self.cid,
+            "is_malicious": int(self.is_malicious),
+        }
 
     def evaluate(self, parameters, config):
         _set_params(self.model, parameters)
@@ -158,7 +201,7 @@ class MnistClient(fl.client.NumPyClient):
 
 
 class RobustFedStrategy(fl.server.strategy.FedAvg):
-    def __init__(self, client_fraction: float, aggregator_cfg: dict, **kwargs):
+    def __init__(self, client_fraction: float, aggregator_cfg: dict, attack_cfg: dict, malicious_ids: set[int], **kwargs):
         super().__init__(**kwargs)
         self.client_fraction = client_fraction
         self.aggregator = aggregator_cfg.get("aggregator", "fedavg")
@@ -168,8 +211,12 @@ class RobustFedStrategy(fl.server.strategy.FedAvg):
         if self.m is not None:
             self.m = int(self.m)
 
+        self.attack_cfg = attack_cfg
+        self.malicious_ids = malicious_ids
+
         self.round_metrics: list[dict] = []
         self.agg_debug: list[dict] = []
+        self.attack_debug: list[dict] = []
         self._round_starts: dict[int, float] = {}
         self._train_loss_by_round: dict[int, float] = {}
 
@@ -203,8 +250,7 @@ class RobustFedStrategy(fl.server.strategy.FedAvg):
             raise ValueError(f"Unsupported aggregator: {self.aggregator}")
 
         template = ndarrays_by_client[0]
-        rebuilt = []
-        offset = 0
+        rebuilt, offset = [], 0
         for arr in template:
             size = int(np.prod(arr.shape))
             rebuilt_arr = agg_vec[offset : offset + size].reshape(arr.shape).astype(arr.dtype)
@@ -225,11 +271,25 @@ class RobustFedStrategy(fl.server.strategy.FedAvg):
 
     def aggregate_fit(self, server_round, results, failures):
         total_examples, weighted_loss = 0, 0.0
+        participating_ids = []
         for _, fit_res in results:
             n = fit_res.num_examples
             total_examples += n
             weighted_loss += n * float(fit_res.metrics.get("train_loss", 0.0))
+            if "client_id" in fit_res.metrics:
+                participating_ids.append(int(fit_res.metrics["client_id"]))
         self._train_loss_by_round[server_round] = weighted_loss / max(total_examples, 1)
+
+        malicious_participating = sorted([cid for cid in participating_ids if cid in self.malicious_ids])
+        self.attack_debug.append(
+            {
+                "round": server_round,
+                "malicious_fraction": float(self.attack_cfg.get("malicious_fraction", 0.0)),
+                "malicious_count": len(malicious_participating),
+                "total_clients_sampled": len(participating_ids),
+                "malicious_ids_participated": "|".join(str(cid) for cid in malicious_participating),
+            }
+        )
 
         if not results:
             return None, {}
@@ -270,7 +330,16 @@ def _write_agg_debug(path: Path, rows: list[dict]) -> None:
         writer.writerows(rows)
 
 
-def _write_run_meta(path: Path, config: dict, dataset_used: str, aggregator_cfg: dict) -> None:
+def _write_attack_debug(path: Path, rows: list[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fields = ["round", "malicious_fraction", "malicious_count", "total_clients_sampled", "malicious_ids_participated"]
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _write_run_meta(path: Path, config: dict, dataset_used: str, aggregator_cfg: dict, attack_cfg: dict, malicious_ids: set[int]) -> None:
     dataset_cfg = config.get("dataset", {})
     meta = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -286,6 +355,16 @@ def _write_run_meta(path: Path, config: dict, dataset_used: str, aggregator_cfg:
         "client_fraction": float(config.get("client_fraction", 1.0)),
         "train_samples_cap": int(dataset_cfg.get("train_samples_cap", 1000)),
         "test_samples_cap": int(dataset_cfg.get("test_samples_cap", 200)),
+        "attack": {
+            "enabled": bool(attack_cfg.get("enabled", False)),
+            "type": str(attack_cfg.get("type", "signflip")),
+            "target": str(attack_cfg.get("target", "update")),
+            "malicious_fraction": float(attack_cfg.get("malicious_fraction", 0.0)),
+            "scale": float(attack_cfg.get("scale", 1.0)),
+            "seed": int(attack_cfg.get("seed", config.get("seed", 42))),
+            "malicious_ids_count": len(malicious_ids),
+            "malicious_ids": sorted(malicious_ids),
+        },
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
@@ -303,6 +382,19 @@ def run_fedavg_tiny(config: dict, run_id: str, out_dir_results: str) -> tuple[li
     server_cfg = config.get("server", {})
     aggregator = server_cfg.get("aggregator", "fedavg")
 
+    attack_cfg = config.get("attack", {})
+    attack_seed = int(attack_cfg.get("seed", config.get("seed", 42)))
+    malicious_ids = select_malicious_client_ids(
+        num_clients=num_clients,
+        malicious_fraction=float(attack_cfg.get("malicious_fraction", 0.0)),
+        seed=attack_seed,
+    )
+    attack_enabled = bool(attack_cfg.get("enabled", False))
+    print(
+        f"attack enabled={attack_enabled} type={attack_cfg.get('type', 'signflip')} "
+        f"fraction={float(attack_cfg.get('malicious_fraction', 0.0))} malicious_ids={sorted(malicious_ids)}"
+    )
+
     data = _build_partitioned_data(config)
 
     def client_fn(context_or_cid):
@@ -310,12 +402,21 @@ def run_fedavg_tiny(config: dict, run_id: str, out_dir_results: str) -> tuple[li
             cid = int(context_or_cid.node_config.get("partition-id", 0))
         else:
             cid = int(context_or_cid)
-        client = MnistClient(cid=cid, train_subset=data.train_parts[cid], test_subset=data.test_set, config=config)
+        client = MnistClient(
+            cid=cid,
+            train_subset=data.train_parts[cid],
+            test_subset=data.test_set,
+            config=config,
+            malicious_ids=malicious_ids,
+            attack_cfg=attack_cfg,
+        )
         return client.to_client() if hasattr(client, "to_client") else client
 
     strategy = RobustFedStrategy(
         client_fraction=client_fraction,
         aggregator_cfg=server_cfg,
+        attack_cfg=attack_cfg,
+        malicious_ids=malicious_ids,
         fraction_fit=client_fraction,
         fraction_evaluate=client_fraction,
         min_fit_clients=fit_clients,
@@ -332,7 +433,15 @@ def run_fedavg_tiny(config: dict, run_id: str, out_dir_results: str) -> tuple[li
     )
 
     results_root = Path(out_dir_results) / run_id
-    _write_run_meta(results_root / "run_meta.yaml", config=config, dataset_used=data.dataset_used, aggregator_cfg=server_cfg)
+    _write_run_meta(
+        results_root / "run_meta.yaml",
+        config=config,
+        dataset_used=data.dataset_used,
+        aggregator_cfg=server_cfg,
+        attack_cfg=attack_cfg,
+        malicious_ids=malicious_ids,
+    )
     _write_agg_debug(results_root / "agg_debug.csv", strategy.agg_debug)
+    _write_attack_debug(results_root / "attack_debug.csv", strategy.attack_debug)
 
     return strategy.round_metrics, f"fedavg_tiny_{aggregator}"
