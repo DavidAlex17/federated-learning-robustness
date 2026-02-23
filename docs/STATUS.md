@@ -11,6 +11,7 @@
 - A tiny Flower + PyTorch backend (`method=fedavg_tiny`) is available through `experiments/run_fedavg.py` for small reproducible FL runs on capped MNIST.
 - FedAvg Tiny supports in-repo robust aggregators (`fedavg`, `trimmed_mean`, `multi_krum`) and writes provenance files (`run_meta.yaml`, `agg_debug.csv`).
 - FedAvg Tiny includes an optional deterministic sign-flip attack (off by default) and writes `attack_debug.csv` for round-level participation diagnostics.
+- FedAvg Tiny includes an optional PID-inspired anomaly scoring + exclusion defense (off by default) and writes `defense_debug.csv` with TP/FP/FN-style round diagnostics under attack.
 - A pytest smoke test (`tests/test_smoke.py`) validates end-to-end execution and artifact creation.
 
 ## Legacy / outdated components

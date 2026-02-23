@@ -46,6 +46,23 @@ def apply_signflip_attack(old_params: list[np.ndarray], new_params: list[np.ndar
     return attacked
 
 
+def update_pid_score(error: float, state: dict, kp: float, ki: float, kd: float) -> tuple[float, dict]:
+    """Update PID state from a scalar error and return score and new state."""
+    integral = float(state.get("integral", 0.0)) + float(error)
+    prev_error = float(state.get("prev_error", 0.0))
+    derivative = float(error) - prev_error
+    score = kp * float(error) + ki * integral + kd * derivative
+    return float(score), {"integral": integral, "prev_error": float(error)}
+
+
+def select_top_k_by_score(scores: dict[int, float], k: int) -> list[int]:
+    """Select top-k ids by descending score, deterministic tie-break by client id."""
+    if k <= 0:
+        return []
+    ordered = sorted(scores.items(), key=lambda x: (-x[1], x[0]))
+    return [cid for cid, _ in ordered[: min(k, len(ordered))]]
+
+
 class TinyMLP(nn.Module):
     def __init__(self) -> None:
         super().__init__()
@@ -201,7 +218,15 @@ class MnistClient(fl.client.NumPyClient):
 
 
 class RobustFedStrategy(fl.server.strategy.FedAvg):
-    def __init__(self, client_fraction: float, aggregator_cfg: dict, attack_cfg: dict, malicious_ids: set[int], **kwargs):
+    def __init__(
+        self,
+        client_fraction: float,
+        aggregator_cfg: dict,
+        attack_cfg: dict,
+        defense_cfg: dict,
+        malicious_ids: set[int],
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self.client_fraction = client_fraction
         self.aggregator = aggregator_cfg.get("aggregator", "fedavg")
@@ -214,14 +239,26 @@ class RobustFedStrategy(fl.server.strategy.FedAvg):
         self.attack_cfg = attack_cfg
         self.malicious_ids = malicious_ids
 
+        self.defense_cfg = defense_cfg
+        self.defense_enabled = bool(defense_cfg.get("enabled", False))
+        self.k_exclude = int(defense_cfg.get("k_exclude", 1))
+        self.kp = float(defense_cfg.get("Kp", 1.0))
+        self.ki = float(defense_cfg.get("Ki", 0.0))
+        self.kd = float(defense_cfg.get("Kd", 0.0))
+        self.warmup_rounds = int(defense_cfg.get("warmup_rounds", 0))
+        self.pid_state: dict[int, dict] = {}
+
         self.round_metrics: list[dict] = []
         self.agg_debug: list[dict] = []
         self.attack_debug: list[dict] = []
+        self.defense_debug: list[dict] = []
         self._round_starts: dict[int, float] = {}
         self._train_loss_by_round: dict[int, float] = {}
+        self._round_base_params: dict[int, list[np.ndarray]] = {}
 
     def configure_fit(self, server_round, parameters, client_manager):
         self._round_starts[server_round] = time.perf_counter()
+        self._round_base_params[server_round] = parameters_to_ndarrays(parameters)
         return super().configure_fit(server_round, parameters, client_manager)
 
     def _aggregate_custom(self, server_round: int, results):
@@ -241,11 +278,16 @@ class RobustFedStrategy(fl.server.strategy.FedAvg):
             n_selected = n_used
         elif self.aggregator == "multi_krum":
             neighbor_count = n_clients_total - self.f - 2
-            m = self.m if self.m is not None else neighbor_count
-            m = max(1, min(m, n_clients_total))
-            agg_vec = multi_krum(vectors, f=self.f, m=m)
-            n_used = n_clients_total
-            n_selected = m
+            if neighbor_count <= 0:
+                agg_vec = fedavg(vectors, weights=None)
+                n_used = n_clients_total
+                n_selected = n_clients_total
+            else:
+                m = self.m if self.m is not None else neighbor_count
+                m = max(1, min(m, n_clients_total))
+                agg_vec = multi_krum(vectors, f=self.f, m=m)
+                n_used = n_clients_total
+                n_selected = m
         else:
             raise ValueError(f"Unsupported aggregator: {self.aggregator}")
 
@@ -269,6 +311,44 @@ class RobustFedStrategy(fl.server.strategy.FedAvg):
         )
         return ndarrays_to_parameters(rebuilt)
 
+    def _apply_pid_exclusion(self, server_round: int, results):
+        if not results:
+            return results, [], {}
+
+        base = self._round_base_params.get(server_round)
+        if base is None:
+            return results, [], {}
+        base_vec = np.concatenate([a.ravel() for a in base])
+
+        client_ids = [int(res.metrics.get("client_id", idx)) for idx, (_, res) in enumerate(results)]
+        updates = []
+        for _, fit_res in results:
+            vec = np.concatenate([a.ravel() for a in parameters_to_ndarrays(fit_res.parameters)])
+            updates.append(vec - base_vec)
+        updates_arr = np.asarray(updates)
+        ref = np.median(updates_arr, axis=0)
+
+        scores = {}
+        for cid, upd in zip(client_ids, updates):
+            error = float(np.linalg.norm(upd - ref))
+            score, new_state = update_pid_score(error, self.pid_state.get(cid, {}), self.kp, self.ki, self.kd)
+            self.pid_state[cid] = new_state
+            scores[cid] = score
+
+        excluded_ids = []
+        if self.defense_enabled and server_round > self.warmup_rounds:
+            k = max(0, min(self.k_exclude, len(results) - 1))
+            excluded_ids = select_top_k_by_score(scores, k)
+
+        kept = []
+        for pair, cid in zip(results, client_ids):
+            if cid not in excluded_ids:
+                kept.append(pair)
+        if not kept:
+            kept = [results[0]]
+
+        return kept, excluded_ids, scores
+
     def aggregate_fit(self, server_round, results, failures):
         total_examples, weighted_loss = 0, 0.0
         participating_ids = []
@@ -291,9 +371,42 @@ class RobustFedStrategy(fl.server.strategy.FedAvg):
             }
         )
 
-        if not results:
+        filtered_results, excluded_ids, scores = self._apply_pid_exclusion(server_round, results)
+
+        n_total = len(results)
+        n_excluded = len(excluded_ids)
+        malicious_in_round = set(malicious_participating)
+        excluded_set = set(excluded_ids)
+        if bool(self.attack_cfg.get("enabled", False)):
+            tp = len(excluded_set & malicious_in_round)
+            fp = len(excluded_set - malicious_in_round)
+            fn = len(malicious_in_round - excluded_set)
+            precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+            recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+        else:
+            tp = fp = fn = ""
+            precision = recall = ""
+
+        score_str = "|".join(f"{cid}:{scores[cid]:.6f}" for cid in sorted(scores.keys()))
+        self.defense_debug.append(
+            {
+                "round": server_round,
+                "n_total": n_total,
+                "n_excluded": n_excluded,
+                "excluded_ids": "|".join(str(cid) for cid in sorted(excluded_ids)),
+                "malicious_ids_in_round": "|".join(str(cid) for cid in sorted(malicious_in_round)),
+                "tp": tp,
+                "fp": fp,
+                "fn": fn,
+                "precision": precision,
+                "recall": recall,
+                "scores": score_str,
+            }
+        )
+
+        if not filtered_results:
             return None, {}
-        params = self._aggregate_custom(server_round, results)
+        params = self._aggregate_custom(server_round, filtered_results)
         return params, {}
 
     def aggregate_evaluate(self, server_round, results, failures):
@@ -339,7 +452,36 @@ def _write_attack_debug(path: Path, rows: list[dict]) -> None:
         writer.writerows(rows)
 
 
-def _write_run_meta(path: Path, config: dict, dataset_used: str, aggregator_cfg: dict, attack_cfg: dict, malicious_ids: set[int]) -> None:
+def _write_defense_debug(path: Path, rows: list[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fields = [
+        "round",
+        "n_total",
+        "n_excluded",
+        "excluded_ids",
+        "malicious_ids_in_round",
+        "tp",
+        "fp",
+        "fn",
+        "precision",
+        "recall",
+        "scores",
+    ]
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _write_run_meta(
+    path: Path,
+    config: dict,
+    dataset_used: str,
+    aggregator_cfg: dict,
+    attack_cfg: dict,
+    defense_cfg: dict,
+    malicious_ids: set[int],
+) -> None:
     dataset_cfg = config.get("dataset", {})
     meta = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -364,6 +506,15 @@ def _write_run_meta(path: Path, config: dict, dataset_used: str, aggregator_cfg:
             "seed": int(attack_cfg.get("seed", config.get("seed", 42))),
             "malicious_ids_count": len(malicious_ids),
             "malicious_ids": sorted(malicious_ids),
+        },
+        "defense": {
+            "enabled": bool(defense_cfg.get("enabled", False)),
+            "type": str(defense_cfg.get("type", "pid_exclusion")),
+            "k_exclude": int(defense_cfg.get("k_exclude", 1)),
+            "Kp": float(defense_cfg.get("Kp", 1.0)),
+            "Ki": float(defense_cfg.get("Ki", 0.0)),
+            "Kd": float(defense_cfg.get("Kd", 0.0)),
+            "warmup_rounds": int(defense_cfg.get("warmup_rounds", 0)),
         },
     }
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -395,6 +546,12 @@ def run_fedavg_tiny(config: dict, run_id: str, out_dir_results: str) -> tuple[li
         f"fraction={float(attack_cfg.get('malicious_fraction', 0.0))} malicious_ids={sorted(malicious_ids)}"
     )
 
+    defense_cfg = config.get("defense", {})
+    print(
+        f"defense enabled={bool(defense_cfg.get('enabled', False))} "
+        f"type={defense_cfg.get('type', 'pid_exclusion')} k_exclude={int(defense_cfg.get('k_exclude', 1))}"
+    )
+
     data = _build_partitioned_data(config)
 
     def client_fn(context_or_cid):
@@ -416,6 +573,7 @@ def run_fedavg_tiny(config: dict, run_id: str, out_dir_results: str) -> tuple[li
         client_fraction=client_fraction,
         aggregator_cfg=server_cfg,
         attack_cfg=attack_cfg,
+        defense_cfg=defense_cfg,
         malicious_ids=malicious_ids,
         fraction_fit=client_fraction,
         fraction_evaluate=client_fraction,
@@ -439,9 +597,11 @@ def run_fedavg_tiny(config: dict, run_id: str, out_dir_results: str) -> tuple[li
         dataset_used=data.dataset_used,
         aggregator_cfg=server_cfg,
         attack_cfg=attack_cfg,
+        defense_cfg=defense_cfg,
         malicious_ids=malicious_ids,
     )
     _write_agg_debug(results_root / "agg_debug.csv", strategy.agg_debug)
     _write_attack_debug(results_root / "attack_debug.csv", strategy.attack_debug)
+    _write_defense_debug(results_root / "defense_debug.csv", strategy.defense_debug)
 
     return strategy.round_metrics, f"fedavg_tiny_{aggregator}"

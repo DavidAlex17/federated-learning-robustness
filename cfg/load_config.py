@@ -84,6 +84,27 @@ def validate_and_fill_defaults(cfg):
 
     cfg["attack"] = attack_cfg
 
+    defense_cfg = cfg.get("defense", {})
+    if not isinstance(defense_cfg, dict):
+        defense_cfg = {}
+        assumptions.append("invalid 'defense' section -> using defaults")
+
+    defense_defaults = {
+        "enabled": False,
+        "type": "pid_exclusion",
+        "k_exclude": 1,
+        "Kp": 1.0,
+        "Ki": 0.0,
+        "Kd": 0.0,
+        "warmup_rounds": 0,
+    }
+    for key, value in defense_defaults.items():
+        if key not in defense_cfg:
+            defense_cfg[key] = value
+            assumptions.append(f"missing 'defense.{key}' -> using default {value}")
+
+    cfg["defense"] = defense_cfg
+
     plot_cfg = cfg.get("plot", {})
     if not isinstance(plot_cfg, dict):
         plot_cfg = {}

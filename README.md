@@ -39,6 +39,12 @@ Attack example (off by default):
 PYTHONPATH=. python experiments/run_fedavg.py --run-id atk-fedavg --clean --aggregator fedavg --attack --malicious-fraction 0.5 --attack-scale 1.0
 ```
 
+Attack + defense example:
+
+```bash
+PYTHONPATH=. python experiments/run_fedavg.py --run-id pid-atk-fedavg --clean --aggregator fedavg --attack --malicious-fraction 0.5 --defense --k-exclude 1 --kp 1.0 --ki 0.0 --kd 0.0
+```
+
 Metrics format is documented in **[experiments/metrics_schema.md](experiments/metrics_schema.md)**.
 
 This repository presents an empirical analysis of robustness and failure modes in federated learning under poisoning attacks. Federated learning is treated as the experimental environment, poisoning attacks as adversarial stressors, and the PID (Proportional–Integral–Derivative) mechanism is evaluated as a case-study anomaly-detection defense at the server.

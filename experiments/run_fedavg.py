@@ -23,6 +23,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--attack", action="store_true", help="Enable sign-flip attack")
     parser.add_argument("--malicious-fraction", type=float, default=None, help="Override attack malicious fraction")
     parser.add_argument("--attack-scale", type=float, default=None, help="Override attack scale")
+    parser.add_argument("--defense", action="store_true", help="Enable PID-style exclusion defense")
+    parser.add_argument("--k-exclude", type=int, default=None, help="Defense top-k exclusions")
+    parser.add_argument("--kp", type=float, default=None, help="Defense Kp")
+    parser.add_argument("--ki", type=float, default=None, help="Defense Ki")
+    parser.add_argument("--kd", type=float, default=None, help="Defense Kd")
     parser.add_argument("--config", type=str, default=None, help="Optional config path")
     return parser.parse_args()
 
@@ -40,6 +45,17 @@ def main() -> None:
         cfg.setdefault("attack", {})["malicious_fraction"] = args.malicious_fraction
     if args.attack_scale is not None:
         cfg.setdefault("attack", {})["scale"] = args.attack_scale
+
+    if args.defense:
+        cfg.setdefault("defense", {})["enabled"] = True
+    if args.k_exclude is not None:
+        cfg.setdefault("defense", {})["k_exclude"] = args.k_exclude
+    if args.kp is not None:
+        cfg.setdefault("defense", {})["Kp"] = args.kp
+    if args.ki is not None:
+        cfg.setdefault("defense", {})["Ki"] = args.ki
+    if args.kd is not None:
+        cfg.setdefault("defense", {})["Kd"] = args.kd
 
     run_id = args.run_id or f"fedavg-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}"
     results_root = Path(cfg["results_dir"]) / run_id
