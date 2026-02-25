@@ -40,6 +40,16 @@ SUMMARY_COLUMNS = [
     "defense_avg_fn",
 ]
 
+MINIMAL_COLUMNS = [
+    "run_id",
+    "aggregator",
+    "malicious_fraction",
+    "defense_enabled",
+    "final_val_acc",
+    "defense_avg_precision",
+    "defense_avg_recall",
+]
+
 
 def _as_float(value):
     try:
@@ -106,7 +116,13 @@ def _defense_summary(path: Path) -> tuple[str, str, str, str, str]:
     )
 
 
-def summarize_runs(results_root: Path, out_path: Path, runs: list[str] | None = None, glob_pattern: str | None = None) -> list[dict]:
+def summarize_runs(
+    results_root: Path,
+    out_path: Path,
+    runs: list[str] | None = None,
+    glob_pattern: str | None = None,
+    write_output: bool = True,
+) -> list[dict]:
     run_dirs = [p for p in results_root.iterdir() if p.is_dir()]
     if runs:
         allowed = set(runs)
@@ -160,13 +176,33 @@ def summarize_runs(results_root: Path, out_path: Path, runs: list[str] | None = 
         }
         summary_rows.append(row)
 
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with out_path.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=SUMMARY_COLUMNS)
-        writer.writeheader()
-        writer.writerows(summary_rows)
+    if write_output:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        with out_path.open("w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=SUMMARY_COLUMNS)
+            writer.writeheader()
+            writer.writerows(summary_rows)
 
     return summary_rows
+
+
+def _format_minimal_table(rows: list[dict], limit: int) -> str:
+    shown = rows[: max(0, limit)]
+    data = [MINIMAL_COLUMNS]
+    for row in shown:
+        data.append([str(row.get(col, "")) for col in MINIMAL_COLUMNS])
+
+    widths = [max(len(str(r[i])) for r in data) for i in range(len(MINIMAL_COLUMNS))]
+
+    lines = []
+    header = " | ".join(str(MINIMAL_COLUMNS[i]).ljust(widths[i]) for i in range(len(MINIMAL_COLUMNS)))
+    sep = "-+-".join("-" * widths[i] for i in range(len(MINIMAL_COLUMNS)))
+    lines.append(header)
+    lines.append(sep)
+    for row in shown:
+        line = " | ".join(str(row.get(MINIMAL_COLUMNS[i], "")).ljust(widths[i]) for i in range(len(MINIMAL_COLUMNS)))
+        lines.append(line)
+    return "\n".join(lines)
 
 
 def parse_args() -> argparse.Namespace:
@@ -175,6 +211,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out", default="experiments/results/summary.csv", help="Output summary CSV")
     parser.add_argument("--runs", nargs="*", default=None, help="Optional explicit run-id filter list")
     parser.add_argument("--glob", dest="glob_pattern", default=None, help="Optional run-id glob filter")
+    parser.add_argument("--minimal", action="store_true", help="Print a compact fixed-width table")
+    parser.add_argument("--limit", type=int, default=50, help="Maximum rows to display in minimal mode")
+    parser.add_argument("--no-write", action="store_true", help="Do not write summary CSV")
     return parser.parse_args()
 
 
@@ -185,7 +224,10 @@ def main() -> None:
         out_path=Path(args.out),
         runs=args.runs,
         glob_pattern=args.glob_pattern,
+        write_output=not args.no_write,
     )
+    if args.minimal:
+        print(_format_minimal_table(rows, limit=args.limit))
     print(f"summarized_runs={len(rows)}")
     print(f"summary_path={Path(args.out)}")
 
