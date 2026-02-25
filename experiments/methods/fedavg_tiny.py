@@ -8,7 +8,9 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-
+import logging
+import os
+import warnings
 import flwr as fl
 import numpy as np
 import torch
@@ -536,7 +538,6 @@ def _write_run_meta(
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
         yaml.safe_dump(meta, f, sort_keys=False)
-
 
 def run_fedavg_tiny(config: dict, run_id: str, out_dir_results: str) -> tuple[list[dict], str]:
     """Run tiny FL with configurable robust aggregation; return metrics and plot tag."""
