@@ -47,6 +47,14 @@ PYTHONPATH=. python experiments/run_fedavg.py --run-id pid-atk-fedavg --clean --
 
 Metrics format is documented in **[experiments/metrics_schema.md](experiments/metrics_schema.md)**.
 
+### Summarize runs (overwrite summary.csv)
+
+```bash
+./.venv/bin/python experiments/summarize_runs.py
+```
+
+Writes a fresh summary report to `experiments/results/summary.csv`.
+
 This repository presents an empirical analysis of robustness and failure modes in federated learning under poisoning attacks. Federated learning is treated as the experimental environment, poisoning attacks as adversarial stressors, and the PID (Proportional–Integral–Derivative) mechanism is evaluated as a case-study anomaly-detection defense at the server.
 
 The focus is on understanding system behavior and limitations under realistic assumptions, not on proposing new algorithms or achieving state-of-the-art accuracy.

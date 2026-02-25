@@ -63,6 +63,20 @@ def select_top_k_by_score(scores: dict[int, float], k: int) -> list[int]:
     return [cid for cid, _ in ordered[: min(k, len(ordered))]]
 
 
+def cosine_direction_error(update: np.ndarray, reference: np.ndarray, eps: float = 1e-12) -> tuple[float, float]:
+    """Return (error, cosine) where error=1-cosine using safe zero-norm handling."""
+    norm_u = float(np.linalg.norm(update))
+    norm_r = float(np.linalg.norm(reference))
+    denom = norm_u * norm_r + eps
+    if norm_u <= eps or norm_r <= eps:
+        return 0.0, 1.0
+    cosine = float(np.dot(update, reference) / denom)
+    if not np.isfinite(cosine):
+        return 0.0, 1.0
+    cosine = max(-1.0, min(1.0, cosine))
+    return 1.0 - cosine, cosine
+
+
 class TinyMLP(nn.Module):
     def __init__(self) -> None:
         super().__init__()
@@ -313,11 +327,11 @@ class RobustFedStrategy(fl.server.strategy.FedAvg):
 
     def _apply_pid_exclusion(self, server_round: int, results):
         if not results:
-            return results, [], {}
+            return results, [], {}, {}
 
         base = self._round_base_params.get(server_round)
         if base is None:
-            return results, [], {}
+            return results, [], {}, {}
         base_vec = np.concatenate([a.ravel() for a in base])
 
         client_ids = [int(res.metrics.get("client_id", idx)) for idx, (_, res) in enumerate(results)]
@@ -329,11 +343,13 @@ class RobustFedStrategy(fl.server.strategy.FedAvg):
         ref = np.median(updates_arr, axis=0)
 
         scores = {}
+        cosines = {}
         for cid, upd in zip(client_ids, updates):
-            error = float(np.linalg.norm(upd - ref))
+            error, cosine = cosine_direction_error(upd, ref)
             score, new_state = update_pid_score(error, self.pid_state.get(cid, {}), self.kp, self.ki, self.kd)
             self.pid_state[cid] = new_state
             scores[cid] = score
+            cosines[cid] = cosine
 
         excluded_ids = []
         if self.defense_enabled and server_round > self.warmup_rounds:
@@ -347,7 +363,7 @@ class RobustFedStrategy(fl.server.strategy.FedAvg):
         if not kept:
             kept = [results[0]]
 
-        return kept, excluded_ids, scores
+        return kept, excluded_ids, scores, cosines
 
     def aggregate_fit(self, server_round, results, failures):
         total_examples, weighted_loss = 0, 0.0
@@ -371,7 +387,7 @@ class RobustFedStrategy(fl.server.strategy.FedAvg):
             }
         )
 
-        filtered_results, excluded_ids, scores = self._apply_pid_exclusion(server_round, results)
+        filtered_results, excluded_ids, scores, cosines = self._apply_pid_exclusion(server_round, results)
 
         n_total = len(results)
         n_excluded = len(excluded_ids)
@@ -387,7 +403,7 @@ class RobustFedStrategy(fl.server.strategy.FedAvg):
             tp = fp = fn = ""
             precision = recall = ""
 
-        score_str = "|".join(f"{cid}:{scores[cid]:.6f}" for cid in sorted(scores.keys()))
+        score_str = "|".join(f"{cid}:{scores[cid]:.6f}(cos={cosines.get(cid, 1.0):.6f})" for cid in sorted(scores.keys()))
         self.defense_debug.append(
             {
                 "round": server_round,
