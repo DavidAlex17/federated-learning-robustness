@@ -21,6 +21,11 @@ dataset:
   train_samples_cap: 1000
   test_samples_cap: 200
 
+# Data partition defaults
+partition:
+  type: iid  # iid, dirichlet
+  alpha: 0.1
+
 # Plot defaults
 plot:
   dpi: 120

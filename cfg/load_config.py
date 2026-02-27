@@ -43,6 +43,19 @@ def validate_and_fill_defaults(cfg):
             assumptions.append(f"missing 'dataset.{key}' -> using default {value}")
     cfg["dataset"] = dataset_cfg
 
+    partition_cfg = cfg.get("partition", {})
+    if not isinstance(partition_cfg, dict):
+        partition_cfg = {}
+        assumptions.append("invalid 'partition' section -> using defaults")
+
+    partition_defaults = {"type": "iid", "alpha": 0.1}
+    for key, value in partition_defaults.items():
+        if key not in partition_cfg:
+            partition_cfg[key] = value
+            assumptions.append(f"missing 'partition.{key}' -> using default {value}")
+
+    cfg["partition"] = partition_cfg
+
     server_cfg = cfg.get("server", {})
     if not isinstance(server_cfg, dict):
         server_cfg = {}

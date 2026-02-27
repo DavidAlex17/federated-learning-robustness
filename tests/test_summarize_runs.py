@@ -40,6 +40,7 @@ def _write_meta(path: Path) -> None:
                 "rounds": 1,
                 "clients": 4,
                 "client_fraction": 1.0,
+                "partition": {"type": "dirichlet", "alpha": 0.1},
                 "attack": {"enabled": True, "type": "signflip", "malicious_fraction": 0.5, "malicious_ids_count": 2},
                 "defense": {
                     "enabled": True,
@@ -110,6 +111,7 @@ def test_summarize_runs_and_overwrite(tmp_path: Path) -> None:
     assert written[0]["run_id"] == "run-a"
     assert written[0]["final_val_acc"] == "0.75"
     assert written[0]["defense_avg_precision"] == "1.000000"
+    assert written[0]["partition_type"] == "dirichlet"
 
     # overwrite behavior: change metrics and regenerate
     _write_metrics(run_dir / "metrics.csv", val_acc=0.85)
@@ -147,6 +149,8 @@ def test_minimal_mode_prints_table(tmp_path: Path, monkeypatch, capsys) -> None:
 
     assert "run_id" in captured
     assert "aggregator" in captured
+    assert "partition_type" in captured
+    assert "partition_alpha" in captured
     assert "defense_avg_precision" in captured
     assert "atk-demo" in captured
     assert out_path.exists()

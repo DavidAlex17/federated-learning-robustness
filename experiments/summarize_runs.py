@@ -18,6 +18,8 @@ SUMMARY_COLUMNS = [
     "rounds",
     "clients",
     "client_fraction",
+    "partition_type",
+    "partition_alpha",
     "attack_enabled",
     "attack_type",
     "malicious_fraction",
@@ -43,6 +45,8 @@ SUMMARY_COLUMNS = [
 MINIMAL_COLUMNS = [
     "run_id",
     "aggregator",
+    "partition_type",
+    "partition_alpha",
     "malicious_fraction",
     "defense_enabled",
     "final_val_acc",
@@ -140,6 +144,7 @@ def summarize_runs(
         meta = _load_yaml(run_dir / "run_meta.yaml")
         attack = meta.get("attack", {}) if isinstance(meta.get("attack", {}), dict) else {}
         defense = meta.get("defense", {}) if isinstance(meta.get("defense", {}), dict) else {}
+        partition = meta.get("partition", {}) if isinstance(meta.get("partition", {}), dict) else {}
 
         final_val_acc, final_val_loss, final_train_loss, avg_time = _final_metrics(metrics)
         d_prec, d_rec, d_tp, d_fp, d_fn = _defense_summary(run_dir / "defense_debug.csv")
@@ -153,6 +158,8 @@ def summarize_runs(
             "rounds": meta.get("rounds", ""),
             "clients": meta.get("clients", ""),
             "client_fraction": meta.get("client_fraction", ""),
+            "partition_type": partition.get("type", ""),
+            "partition_alpha": partition.get("alpha", ""),
             "attack_enabled": attack.get("enabled", ""),
             "attack_type": attack.get("type", ""),
             "malicious_fraction": attack.get("malicious_fraction", ""),

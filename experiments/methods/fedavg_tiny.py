@@ -77,6 +77,45 @@ def cosine_direction_error(update: np.ndarray, reference: np.ndarray, eps: float
     return 1.0 - cosine, cosine
 
 
+def _partition_indices_iid(train_indices: np.ndarray, num_clients: int, seed: int) -> list[list[int]]:
+    rng = np.random.default_rng(seed)
+    shuffled = np.array(train_indices, copy=True)
+    rng.shuffle(shuffled)
+    return [arr.tolist() for arr in np.array_split(shuffled, num_clients)]
+
+
+def _dirichlet_partition_indices(labels: np.ndarray, num_clients: int, alpha: float, seed: int) -> list[list[int]]:
+    """Deterministic Dirichlet label-skew partitioning with repair for empty clients."""
+    labels = np.asarray(labels)
+    n = labels.shape[0]
+    rng = np.random.default_rng(seed)
+    per_client: list[list[int]] = [[] for _ in range(num_clients)]
+
+    classes = np.unique(labels)
+    for c in classes:
+        class_indices = np.where(labels == c)[0]
+        rng.shuffle(class_indices)
+        if len(class_indices) == 0:
+            continue
+        probs = rng.dirichlet(np.full(num_clients, alpha))
+        counts = rng.multinomial(len(class_indices), probs)
+        start = 0
+        for cid, cnt in enumerate(counts):
+            if cnt > 0:
+                per_client[cid].extend(class_indices[start : start + cnt].tolist())
+            start += cnt
+
+    # repair: ensure each client has at least one sample when possible
+    if n >= num_clients:
+        for cid in range(num_clients):
+            if len(per_client[cid]) == 0:
+                donor = max(range(num_clients), key=lambda i: len(per_client[i]))
+                if len(per_client[donor]) > 1:
+                    per_client[cid].append(per_client[donor].pop())
+
+    return per_client
+
+
 class TinyMLP(nn.Module):
     def __init__(self) -> None:
         super().__init__()
@@ -102,10 +141,13 @@ def _cap_dataset(ds, cap: int, seed: int) -> Subset:
 
 def _build_partitioned_data(config: dict) -> PartitionBundle:
     dataset_cfg = config.get("dataset", {})
+    partition_cfg = config.get("partition", {})
     train_cap = int(dataset_cfg.get("train_samples_cap", 1000))
     test_cap = int(dataset_cfg.get("test_samples_cap", 200))
     num_clients = int(config.get("clients", 4))
     seed = int(config.get("seed", 42))
+    partition_type = str(partition_cfg.get("type", "iid")).lower()
+    partition_alpha = float(partition_cfg.get("alpha", 0.1))
 
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
 
@@ -127,11 +169,18 @@ def _build_partitioned_data(config: dict) -> PartitionBundle:
     train_subset = _cap_dataset(train_raw, train_cap, seed=seed)
     test_subset = _cap_dataset(test_raw, test_cap, seed=seed + 1)
 
-    rng = np.random.default_rng(seed)
     train_indices = np.array(train_subset.indices)
-    rng.shuffle(train_indices)
-    split_indices = np.array_split(train_indices, num_clients)
-    train_parts = [Subset(train_raw, idxs.tolist()) for idxs in split_indices]
+    labels = np.array([int(train_raw[idx][1]) for idx in train_indices], dtype=int)
+
+    if partition_type == "dirichlet":
+        local_lists = _dirichlet_partition_indices(labels=labels, num_clients=num_clients, alpha=partition_alpha, seed=seed)
+    else:
+        local_lists = _partition_indices_iid(train_indices=np.arange(len(train_indices)), num_clients=num_clients, seed=seed)
+
+    train_parts = []
+    for local in local_lists:
+        mapped = train_indices[np.asarray(local, dtype=int)].tolist() if local else []
+        train_parts.append(Subset(train_raw, mapped))
 
     return PartitionBundle(train_parts=train_parts, test_set=test_subset, dataset_used=dataset_used)
 
@@ -468,6 +517,23 @@ def _write_attack_debug(path: Path, rows: list[dict]) -> None:
         writer.writerows(rows)
 
 
+def _write_partition_debug(path: Path, train_parts: list[Subset]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fields = ["client_id", "n_samples"] + [f"label_{i}_count" for i in range(10)]
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fields)
+        writer.writeheader()
+        for cid, subset in enumerate(train_parts):
+            counts = [0] * 10
+            for _, label in subset:
+                if 0 <= int(label) <= 9:
+                    counts[int(label)] += 1
+            row = {"client_id": cid, "n_samples": len(subset)}
+            for i in range(10):
+                row[f"label_{i}_count"] = counts[i]
+            writer.writerow(row)
+
+
 def _write_defense_debug(path: Path, rows: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fields = [
@@ -497,6 +563,7 @@ def _write_run_meta(
     attack_cfg: dict,
     defense_cfg: dict,
     malicious_ids: set[int],
+    partition_cfg: dict,
 ) -> None:
     dataset_cfg = config.get("dataset", {})
     meta = {
@@ -513,6 +580,7 @@ def _write_run_meta(
         "client_fraction": float(config.get("client_fraction", 1.0)),
         "train_samples_cap": int(dataset_cfg.get("train_samples_cap", 1000)),
         "test_samples_cap": int(dataset_cfg.get("test_samples_cap", 200)),
+        "partition": {"type": str(partition_cfg.get("type", "iid")), "alpha": float(partition_cfg.get("alpha", 0.1))},
         "attack": {
             "enabled": bool(attack_cfg.get("enabled", False)),
             "type": str(attack_cfg.get("type", "signflip")),
@@ -548,6 +616,7 @@ def run_fedavg_tiny(config: dict, run_id: str, out_dir_results: str) -> tuple[li
     fit_clients = max(1, int(np.ceil(num_clients * client_fraction)))
     server_cfg = config.get("server", {})
     aggregator = server_cfg.get("aggregator", "fedavg")
+    partition_cfg = config.get("partition", {})
 
     attack_cfg = config.get("attack", {})
     attack_seed = int(attack_cfg.get("seed", config.get("seed", 42)))
@@ -615,7 +684,9 @@ def run_fedavg_tiny(config: dict, run_id: str, out_dir_results: str) -> tuple[li
         attack_cfg=attack_cfg,
         defense_cfg=defense_cfg,
         malicious_ids=malicious_ids,
+        partition_cfg=partition_cfg,
     )
+    _write_partition_debug(results_root / "partition_debug.csv", data.train_parts)
     _write_agg_debug(results_root / "agg_debug.csv", strategy.agg_debug)
     _write_attack_debug(results_root / "attack_debug.csv", strategy.attack_debug)
     _write_defense_debug(results_root / "defense_debug.csv", strategy.defense_debug)
