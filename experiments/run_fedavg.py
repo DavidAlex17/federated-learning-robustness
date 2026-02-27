@@ -28,6 +28,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--kp", type=float, default=None, help="Defense Kp")
     parser.add_argument("--ki", type=float, default=None, help="Defense Ki")
     parser.add_argument("--kd", type=float, default=None, help="Defense Kd")
+    parser.add_argument("--partition", choices=["iid", "dirichlet"], default=None, help="Optional partition type override")
+    parser.add_argument("--alpha", type=float, default=None, help="Optional Dirichlet alpha override")
     parser.add_argument("--config", type=str, default=None, help="Optional config path")
     return parser.parse_args()
 
@@ -56,6 +58,11 @@ def main() -> None:
         cfg.setdefault("defense", {})["Ki"] = args.ki
     if args.kd is not None:
         cfg.setdefault("defense", {})["Kd"] = args.kd
+
+    if args.partition is not None:
+        cfg.setdefault("partition", {})["type"] = args.partition
+    if args.alpha is not None:
+        cfg.setdefault("partition", {})["alpha"] = args.alpha
 
     run_id = args.run_id or f"fedavg-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}"
     results_root = Path(cfg["results_dir"]) / run_id

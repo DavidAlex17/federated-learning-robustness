@@ -57,7 +57,7 @@ def _write_meta(path: Path) -> None:
         )
 
 
-def _write_defense(path: Path) -> None:
+def _write_defense(path: Path, precision: str = "1.0", recall: str = "0.5") -> None:
     with path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(
             f,
@@ -86,8 +86,8 @@ def _write_defense(path: Path) -> None:
                 "tp": 1,
                 "fp": 0,
                 "fn": 1,
-                "precision": 1.0,
-                "recall": 0.5,
+                "precision": precision,
+                "recall": recall,
                 "scores": "",
             }
         )
@@ -154,3 +154,33 @@ def test_minimal_mode_prints_table(tmp_path: Path, monkeypatch, capsys) -> None:
     assert "defense_avg_precision" in captured
     assert "atk-demo" in captured
     assert out_path.exists()
+
+
+def test_defense_zero_metrics_are_not_treated_as_missing(tmp_path: Path, monkeypatch, capsys) -> None:
+    results_root = tmp_path / "results"
+    run_dir = results_root / "zero-defense"
+    _write_metrics(run_dir / "metrics.csv", val_acc=0.44)
+    _write_meta(run_dir / "run_meta.yaml")
+    _write_defense(run_dir / "defense_debug.csv", precision="0.0", recall="0")
+
+    out_path = results_root / "summary.csv"
+    rows = summarize_runs(results_root=results_root, out_path=out_path)
+    assert rows[0]["defense_avg_precision"] == "0.000000"
+    assert rows[0]["defense_avg_recall"] == "0.000000"
+
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "summarize_runs.py",
+            "--results-root",
+            str(results_root),
+            "--out",
+            str(out_path),
+            "--minimal",
+            "--glob",
+            "zero*",
+        ],
+    )
+    summarize_module.main()
+    captured = capsys.readouterr().out
+    assert "0.000000" in captured

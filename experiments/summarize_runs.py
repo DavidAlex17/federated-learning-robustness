@@ -56,6 +56,10 @@ MINIMAL_COLUMNS = [
 
 
 def _as_float(value):
+    if value is None:
+        return None
+    if isinstance(value, str) and value.strip() == "":
+        return None
     try:
         return float(value)
     except (TypeError, ValueError):

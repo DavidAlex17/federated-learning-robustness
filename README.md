@@ -33,6 +33,13 @@ PYTHONPATH=. python experiments/run_fedavg.py --run-id fedavg-trim --clean --agg
 PYTHONPATH=. python experiments/run_fedavg.py --run-id fedavg-krum --clean --aggregator multi_krum
 ```
 
+Partition variants (no config edit required):
+
+```bash
+PYTHONPATH=. python experiments/run_fedavg.py --run-id iid-fedavg --clean --aggregator fedavg --partition iid
+PYTHONPATH=. python experiments/run_fedavg.py --run-id niid-fedavg --clean --aggregator fedavg --partition dirichlet --alpha 0.1
+```
+
 Attack example (off by default):
 
 ```bash
