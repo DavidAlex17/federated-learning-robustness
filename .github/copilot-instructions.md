@@ -5,8 +5,15 @@ Short, actionable guidance for AI coding agents working in this repository. Focu
 ## Big-picture architecture (what to know first)
 
 - Top-level layout:
-  - `framework/aggregators.py` — pure NumPy aggregation functions (`fedavg`, `trimmed_mean`, `multi_krum`). The only library module in `framework/`.
-  - `experiments/methods/fedavg.py` — the complete FL backend: `MLP`, `MnistClient`, `RobustFedStrategy` (aggregation + attack injection + PID defense), and all debug writers.
+  - `framework/aggregators.py` — pure NumPy aggregation functions (`fedavg`, `trimmed_mean`, `multi_krum`).
+  - `framework/attack.py` — attack utilities: `select_malicious_client_ids()`, `apply_signflip_attack()`.
+  - `framework/defense.py` — PID anomaly scoring: `cosine_direction_error()`, `update_pid_score()`, `select_top_k_by_score()`.
+  - `framework/client.py` — Flower `MnistClient` (NumPyClient subclass).
+  - `framework/strategy.py` — `RobustFedStrategy` (aggregation dispatch + PID exclusion + debug collection).
+  - `data/partition.py` — IID and Dirichlet partitioning: `_partition_indices_iid()`, `_dirichlet_partition_indices()`.
+  - `data/mnist.py` — MNIST loading + per-client subsets: `PartitionBundle` dataclass, `_build_partitioned_data()`.
+  - `model/mlp.py` — `MLP` model + helpers: `_get_params()`, `_set_params()`, `_train_one_epoch()`, `_evaluate()`.
+  - `experiments/methods/fedavg.py` — slim entry point: wires modules together, writes debug CSVs, exposes `run_fedavg()`.
   - `experiments/runner.py` — dispatch layer: `run_experiment(config, run_id, out_dir_results, out_dir_plots, method)`.
   - `experiments/run_fedavg.py` — CLI entrypoint for all FL runs (aggregator, attack, defense, partition overrides).
   - `experiments/run_smoke.py` — fast synthetic smoke entrypoint (no real FL, used by CI).
@@ -16,10 +23,11 @@ Short, actionable guidance for AI coding agents working in this repository. Focu
 
 ## Key integration points (where to edit)
 
-- **Aggregation logic** (FedAvg / TrimmedMean / Multi-Krum): `framework/aggregators.py` for the math; `RobustFedStrategy._aggregate_custom()` in `experiments/methods/fedavg.py` for dispatch.
-- **Attack injection**: `apply_signflip_attack()` and `MnistClient.fit()` in `experiments/methods/fedavg.py`.
-- **Defense / anomaly scoring**: `RobustFedStrategy._apply_pid_exclusion()` in `experiments/methods/fedavg.py`; PID helpers `update_pid_score()`, `cosine_direction_error()`, `select_top_k_by_score()` are module-level functions in the same file.
-- **Partitioning**: `_partition_indices_iid()` and `_dirichlet_partition_indices()` in `experiments/methods/fedavg.py`.
+- **Aggregation logic** (FedAvg / TrimmedMean / Multi-Krum): `framework/aggregators.py` for the math; `RobustFedStrategy._aggregate_custom()` in `framework/strategy.py` for dispatch.
+- **Attack injection**: `apply_signflip_attack()` in `framework/attack.py`; called inside `MnistClient.fit()` in `framework/client.py`.
+- **Defense / anomaly scoring**: `RobustFedStrategy._apply_pid_exclusion()` in `framework/strategy.py`; PID helpers in `framework/defense.py`.
+- **Partitioning**: `_partition_indices_iid()` and `_dirichlet_partition_indices()` in `data/partition.py`.
+- **Model**: `MLP` and local training/eval helpers in `model/mlp.py`.
 - **Config defaults**: `cfg/project.yaml` (source of truth) + `cfg/load_config.py` (validates and fills missing keys). Always add new knobs in both.
 - **CLI flags**: `experiments/run_fedavg.py` — add `argparse` args here and forward them into `cfg` before calling `run_experiment`.
 
@@ -67,8 +75,8 @@ PYTHONPATH=. python -m pytest -q
 ## Concrete examples to copy from
 
 - Adding a new experiment script: copy `experiments/run_fedavg.py`, add CLI flags, override `cfg` dict before calling `run_experiment`.
-- Adding a new aggregator: add a function to `framework/aggregators.py`, add a unit test in `tests/test_aggregators.py`, add the dispatch branch in `RobustFedStrategy._aggregate_custom()`.
-- Adding a new defense: implement inside `RobustFedStrategy` in `experiments/methods/fedavg.py`, add a config key to `cfg/project.yaml` + `cfg/load_config.py`, and write a unit test.
+- Adding a new aggregator: add a function to `framework/aggregators.py`, add a unit test in `tests/test_aggregators.py`, add the dispatch branch in `RobustFedStrategy._aggregate_custom()` in `framework/strategy.py`.
+- Adding a new defense: implement in `framework/defense.py` + a new exclusion method in `RobustFedStrategy` (`framework/strategy.py`), add a config key to `cfg/project.yaml` + `cfg/load_config.py`, and write a unit test.
 
 ## Dependencies & environment
 
@@ -85,7 +93,14 @@ PYTHONPATH=. python -m pytest -q
 
 - `cfg/project.yaml`, `cfg/load_config.py` — config defaults and path resolution
 - `framework/aggregators.py` — aggregation math (fedavg, trimmed_mean, multi_krum)
-- `experiments/methods/fedavg.py` — FL backend (model, client, strategy, attack, defense, partitioning, debug writers)
+- `framework/attack.py` — attack utilities (select_malicious_client_ids, apply_signflip_attack)
+- `framework/defense.py` — PID scoring utilities (cosine_direction_error, update_pid_score, select_top_k_by_score)
+- `framework/client.py` — Flower MnistClient
+- `framework/strategy.py` — RobustFedStrategy (aggregation dispatch + PID exclusion)
+- `data/partition.py` — IID and Dirichlet partitioning
+- `data/mnist.py` — MNIST loading and PartitionBundle
+- `model/mlp.py` — MLP model and training/eval helpers
+- `experiments/methods/fedavg.py` — slim FL entry point (wires modules + debug writers)
 - `experiments/runner.py` — experiment dispatch
 - `experiments/run_fedavg.py` — canonical CLI entrypoint
 - `experiments/run_smoke.py` — fast smoke entrypoint (copy for new quick-check scripts)

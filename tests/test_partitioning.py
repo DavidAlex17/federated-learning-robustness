@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from experiments.methods.fedavg import _dirichlet_partition_indices, _partition_indices_iid
+from data.partition import _dirichlet_partition_indices, _partition_indices_iid
 
 
 def _label_counts(partitions: list[list[int]], labels: np.ndarray) -> list[tuple[int, ...]]:
