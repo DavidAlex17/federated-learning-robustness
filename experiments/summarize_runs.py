@@ -42,16 +42,15 @@ SUMMARY_COLUMNS = [
     "defense_avg_fn",
 ]
 
-MINIMAL_COLUMNS = [
-    "run_id",
-    "aggregator",
-    "partition_type",
-    "partition_alpha",
-    "malicious_fraction",
-    "defense_enabled",
-    "final_val_acc",
-    "defense_avg_precision",
-    "defense_avg_recall",
+# Columns used in the ASCII comparison table (--minimal)
+_TABLE_COLS = [
+    ("run_id",               "run_id"),
+    ("partition_type",       "partition"),
+    ("malicious_fraction",   "atk%"),
+    ("defense_enabled",      "defense"),
+    ("final_val_acc",        "val_acc"),
+    ("defense_avg_precision","precision"),
+    ("defense_avg_recall",   "recall"),
 ]
 
 
@@ -197,22 +196,65 @@ def summarize_runs(
     return summary_rows
 
 
+def _fmt_cell(key: str, value: str) -> str:
+    """Format a cell value for display."""
+    if key == "defense_enabled":
+        return "yes" if str(value).lower() == "true" else "no"
+    if key == "malicious_fraction":
+        try:
+            return f"{float(value)*100:.0f}%"
+        except (ValueError, TypeError):
+            return value
+    if key == "partition_type":
+        return "non-iid" if value == "dirichlet" else value
+    if key in ("final_val_acc", "defense_avg_precision", "defense_avg_recall"):
+        if value == "" or value is None:
+            return "—"
+        try:
+            return f"{float(value):.3f}"
+        except (ValueError, TypeError):
+            return value
+    return str(value)
+
+
 def _format_minimal_table(rows: list[dict], limit: int) -> str:
-    shown = rows[: max(0, limit)]
-    data = [MINIMAL_COLUMNS]
-    for row in shown:
-        data.append([str(row.get(col, "")) for col in MINIMAL_COLUMNS])
+    # filter out CI/smoke runs that have no meaningful FL data
+    shown = [r for r in rows if r.get("method") in {"fedavg", "fedavg_tiny"}][: max(0, limit)]
 
-    widths = [max(len(str(r[i])) for r in data) for i in range(len(MINIMAL_COLUMNS))]
+    keys   = [col  for col, _    in _TABLE_COLS]
+    labels = [label for _,   label in _TABLE_COLS]
 
-    lines = []
-    header = " | ".join(str(MINIMAL_COLUMNS[i]).ljust(widths[i]) for i in range(len(MINIMAL_COLUMNS)))
-    sep = "-+-".join("-" * widths[i] for i in range(len(MINIMAL_COLUMNS)))
-    lines.append(header)
-    lines.append(sep)
+    # build display rows
+    display: list[list[str]] = []
     for row in shown:
-        line = " | ".join(str(row.get(MINIMAL_COLUMNS[i], "")).ljust(widths[i]) for i in range(len(MINIMAL_COLUMNS)))
-        lines.append(line)
+        cells = []
+        for k in keys:
+            val = str(row.get(k, ""))
+            # hide defense metrics when defense is not enabled
+            if k in ("defense_avg_precision", "defense_avg_recall") and str(row.get("defense_enabled", "")).lower() != "true":
+                val = ""
+            cells.append(_fmt_cell(k, val))
+        display.append(cells)
+
+    # column widths = max of header label and all cell values
+    widths = [max(len(labels[i]), *(len(d[i]) for d in display) if display else [0])
+              for i in range(len(keys))]
+
+    def _row_line(cells: list[str]) -> str:
+        return "│ " + " │ ".join(c.ljust(widths[i]) for i, c in enumerate(cells)) + " │"
+
+    border_top = "┌─" + "─┬─".join("─" * w for w in widths) + "─┐"
+    border_mid = "├─" + "─┼─".join("─" * w for w in widths) + "─┤"
+    border_bot = "└─" + "─┴─".join("─" * w for w in widths) + "─┘"
+
+    lines = [
+        border_top,
+        _row_line(labels),
+        border_mid,
+    ]
+    for cells in display:
+        lines.append(_row_line(cells))
+    lines.append(border_bot)
     return "\n".join(lines)
 
 
@@ -239,7 +281,8 @@ def main() -> None:
     )
     if args.minimal:
         print(_format_minimal_table(rows, limit=args.limit))
-    print(f"summarized_runs={len(rows)}")
+    shown_count = len([r for r in rows if r.get("method") in {"fedavg", "fedavg_tiny"}])
+    print(f"summarized_runs={shown_count}")
     print(f"summary_path={Path(args.out)}")
 
 

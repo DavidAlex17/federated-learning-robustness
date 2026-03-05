@@ -33,7 +33,7 @@ def _write_meta(path: Path) -> None:
     with path.open("w", encoding="utf-8") as f:
         yaml.safe_dump(
             {
-                "method": "fedavg_tiny",
+                "method": "fedavg",
                 "aggregator": "fedavg",
                 "dataset_used": "mnist",
                 "seed": 42,
@@ -148,10 +148,10 @@ def test_minimal_mode_prints_table(tmp_path: Path, monkeypatch, capsys) -> None:
     captured = capsys.readouterr().out
 
     assert "run_id" in captured
-    assert "aggregator" in captured
-    assert "partition_type" in captured
-    assert "partition_alpha" in captured
-    assert "defense_avg_precision" in captured
+    assert "atk%" in captured
+    assert "partition" in captured
+    assert "defense" in captured
+    assert "precision" in captured
     assert "atk-demo" in captured
     assert out_path.exists()
 
@@ -183,4 +183,6 @@ def test_defense_zero_metrics_are_not_treated_as_missing(tmp_path: Path, monkeyp
     )
     summarize_module.main()
     captured = capsys.readouterr().out
-    assert "0.000000" in captured
+    # defense is enabled with 0.0 precision — should render as 0.000, not —
+    assert "0.000" in captured
+    assert "—" not in captured
