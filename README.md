@@ -2,7 +2,7 @@
 
 ## Project Status
 
-This repository is currently in a transitional research-harness phase. For current capabilities, legacy components, and planned milestones, see **[docs/STATUS.md](docs/STATUS.md)**.
+Controlled FL robustness testbed on MNIST using Flower + PyTorch. Supports FedAvg / TrimmedMean / Multi-Krum aggregation, deterministic sign-flip attack, PID-inspired exclusion defense, and IID vs non-IID (Dirichlet) partitioning. All runs are reproducible and write scoped artifacts under `experiments/results/<run_id>/`.
 
 ## Quickstart: Smoke Run
 
@@ -24,7 +24,7 @@ PYTHONPATH=. python experiments/run_fedavg.py --run-id fedavg-local --clean
 This generates:
 
 - `experiments/results/fedavg-local/metrics.csv`
-- `experiments/plots/fedavg-local/fedavg_tiny_fedavg_val_acc.png`
+- `experiments/plots/fedavg-local/fedavg_fedavg_val_acc.png`
 
 Aggregator variants:
 
@@ -53,6 +53,14 @@ PYTHONPATH=. python experiments/run_fedavg.py --run-id pid-atk-fedavg --clean --
 ```
 
 Metrics format is documented in **[experiments/metrics_schema.md](experiments/metrics_schema.md)**.
+
+### Generate comparison plots
+
+```bash
+PYTHONPATH=. python experiments/plot_comparison.py
+```
+
+Produces `experiments/plots/comparison_val_acc.png` and `comparison_val_loss.png` — IID vs non-IID, all three conditions (clean / attack / attack+defense) overlaid.
 
 ### Summarize runs (overwrite summary.csv)
 

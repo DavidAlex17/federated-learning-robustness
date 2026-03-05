@@ -56,36 +56,3 @@ defense:
   Ki: 0.0
   Kd: 0.0
   warmup_rounds: 0
-
-# Byzantine fault tolerance settings (legacy/prototype)
-byzantine_defense:
-  enabled: true
-  strategy: "adaptive"  # conservative, balanced, adaptive
-  trust_threshold: 0.5
-
-  # PID defense parameters
-  pid_gains:
-    kp: 1.0  # Proportional gain
-    ki: 0.1  # Integral gain
-    kd: 0.05 # Derivative gain
-
-  # Krum algorithm parameters
-  krum_params:
-    max_byzantines: 2
-
-  # Bulyan algorithm parameters
-  bulyan_params:
-    max_byzantines: 2
-
-  # Robust Federated Aggregation parameters
-  rfa_params:
-    trim_ratio: 0.2
-    geometric_median_tolerance: 1e-6
-    max_iterations: 100
-
-# Attack simulation settings (legacy/prototype)
-attack_settings:
-  enabled: false
-  attack_type: "label_flipping"  # label_flipping, gradient_ascent, backdoor
-  num_malicious_clients: 2
-  poison_rate: 0.1

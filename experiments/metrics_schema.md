@@ -14,4 +14,4 @@ This repository uses a single, method-agnostic per-round schema for `metrics.csv
 ## Notes
 
 - Output format for Step 2 is CSV (`metrics.csv`) under `experiments/results/<run_id>/`.
-- Plotting tools consume this schema and produce one plot per method under `experiments/plots/<run_id>/`.
+- `experiments/plot_comparison.py` reads this schema across all canonical runs and produces `experiments/plots/comparison_val_acc.png` and `experiments/plots/comparison_val_loss.png`.
