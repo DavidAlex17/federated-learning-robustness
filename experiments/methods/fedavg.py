@@ -116,7 +116,7 @@ def _dirichlet_partition_indices(labels: np.ndarray, num_clients: int, alpha: fl
     return per_client
 
 
-class TinyMLP(nn.Module):
+class MLP(nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self.net = nn.Sequential(nn.Flatten(), nn.Linear(28 * 28, 64), nn.ReLU(), nn.Linear(64, 10))
@@ -246,7 +246,7 @@ class MnistClient(fl.client.NumPyClient):
         self.attack_scale = float(attack_cfg.get("scale", 1.0))
 
         self.device = "cpu"
-        self.model = TinyMLP().to(self.device)
+        self.model = MLP().to(self.device)
         self.lr = float(config.get("lr", 0.01))
         self.local_epochs = int(config.get("local_epochs", 1))
         self.batch_size = int(config.get("batch_size", 32))
@@ -568,7 +568,7 @@ def _write_run_meta(
     dataset_cfg = config.get("dataset", {})
     meta = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "method": "fedavg_tiny",
+        "method": "fedavg",
         "aggregator": aggregator_cfg.get("aggregator", "fedavg"),
         "trim_ratio": aggregator_cfg.get("trim_ratio", 0.1),
         "f": aggregator_cfg.get("f", 1),
@@ -606,8 +606,8 @@ def _write_run_meta(
         yaml.safe_dump(meta, f, sort_keys=False)
 
 
-def run_fedavg_tiny(config: dict, run_id: str, out_dir_results: str) -> tuple[list[dict], str]:
-    """Run tiny FL with configurable robust aggregation; return metrics and plot tag."""
+def run_fedavg(config: dict, run_id: str, out_dir_results: str) -> tuple[list[dict], str]:
+    """Run FL with configurable robust aggregation; return metrics and plot tag."""
     _set_global_seed(int(config.get("seed", 42)))
 
     rounds = int(config.get("rounds", 2))
@@ -691,4 +691,4 @@ def run_fedavg_tiny(config: dict, run_id: str, out_dir_results: str) -> tuple[li
     _write_attack_debug(results_root / "attack_debug.csv", strategy.attack_debug)
     _write_defense_debug(results_root / "defense_debug.csv", strategy.defense_debug)
 
-    return strategy.round_metrics, f"fedavg_tiny_{aggregator}"
+    return strategy.round_metrics, f"fedavg_{aggregator}"

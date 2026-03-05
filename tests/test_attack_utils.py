@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from experiments.methods.fedavg_tiny import apply_signflip_attack, select_malicious_client_ids
+from experiments.methods.fedavg import apply_signflip_attack, select_malicious_client_ids
 
 
 def test_select_malicious_client_ids_is_deterministic() -> None:

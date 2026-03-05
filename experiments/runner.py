@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
-from experiments.methods import run_fedavg_tiny
+from experiments.methods import run_fedavg
 from experiments.plot_metrics import plot_single_method
 
 METRIC_COLUMNS = [
@@ -71,8 +71,8 @@ def run_experiment(
     plot_method = method
     if method == "smoke_synth":
         metrics = _run_smoke_synth(config)
-    elif method == "fedavg_tiny":
-        metrics, plot_method = run_fedavg_tiny(config, run_id=run_id, out_dir_results=out_dir_results)
+    elif method == "fedavg":
+        metrics, plot_method = run_fedavg(config, run_id=run_id, out_dir_results=out_dir_results)
     else:
         raise ValueError(f"Unsupported method: {method}")
 

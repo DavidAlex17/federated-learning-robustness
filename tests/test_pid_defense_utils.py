@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from experiments.methods.fedavg_tiny import cosine_direction_error, select_top_k_by_score, update_pid_score
+from experiments.methods.fedavg import cosine_direction_error, select_top_k_by_score, update_pid_score
 
 
 def test_update_pid_score_series() -> None:

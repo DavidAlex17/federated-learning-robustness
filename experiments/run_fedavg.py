@@ -77,13 +77,13 @@ def main() -> None:
         run_id=run_id,
         out_dir_results=cfg["results_dir"],
         out_dir_plots=cfg["plots_dir"],
-        method="fedavg_tiny",
+        method="fedavg",
     )
 
     print(f"run_id={run_id}")
     print(f"metrics={results_root / 'metrics.csv'}")
     agg = cfg.get('server', {}).get('aggregator', 'fedavg')
-    print(f"plot={plots_root / f'fedavg_tiny_{agg}_val_acc.png'}")
+    print(f"plot={plots_root / f'fedavg_{agg}_val_acc.png'}")
 
 
 if __name__ == "__main__":
