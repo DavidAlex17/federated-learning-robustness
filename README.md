@@ -12,6 +12,23 @@ The focus is on understanding system behavior and failure modes under realistic 
 
 ---
 
+## Fixed Experimental Parameters
+
+These are held constant across all canonical runs — only partition type, attack, and defense vary.
+
+| Parameter | Value | Why |
+|---|---|---|
+| Dataset | MNIST (train cap 1000, test cap 200) | Small enough for fast iteration; well-understood benchmark for FL robustness studies |
+| Model architecture | MLP: 784 → 64 (ReLU) → 10 | Minimal architecture sufficient to learn MNIST; keeps parameter count low so FL communication overhead is negligible |
+| Rounds | 3 | Enough to observe convergence trends and attack/defense dynamics without long runtimes |
+| Clients | 4 | Small number that still allows meaningful majority/minority splits (1 malicious out of 4 = 25%) |
+| Local epochs | 1 | Standard FL assumption; more epochs increase client drift which would confound the defense signal |
+| Learning rate | 0.01 | Conservative SGD rate that trains stably across both IID and non-IID partitions |
+| Batch size | 32 | Standard mini-batch size; balances gradient noise and per-round compute |
+| Random seed | 42 | Fixed for full reproducibility of partitioning, attack client selection, and model initialisation |
+
+---
+
 ## Module Layout
 
 ```
