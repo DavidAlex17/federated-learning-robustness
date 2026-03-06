@@ -16,6 +16,25 @@ def test_update_pid_score_series() -> None:
     assert abs(score2 - 5.6) < 1e-9
 
 
+def test_update_pid_score_integral_decay() -> None:
+    """Decay < 1.0 should prevent unbounded integral accumulation."""
+    state = {}
+    # error=1.0 every round with decay=0.0 -> integral never accumulates
+    _, state = update_pid_score(error=1.0, state=state, kp=1.0, ki=1.0, kd=0.0, integral_decay=0.0)
+    _, state = update_pid_score(error=1.0, state=state, kp=1.0, ki=1.0, kd=0.0, integral_decay=0.0)
+    score, _ = update_pid_score(error=1.0, state=state, kp=1.0, ki=1.0, kd=0.0, integral_decay=0.0)
+    # With decay=0.0, integral = 0*prev + error = 1.0 every round => score = 1 + 1 = 2.0
+    assert abs(score - 2.0) < 1e-9
+
+    # Verify decay=1.0 (default) matches original accumulating behaviour
+    state2 = {}
+    _, state2 = update_pid_score(error=1.0, state=state2, kp=0.0, ki=1.0, kd=0.0, integral_decay=1.0)
+    _, state2 = update_pid_score(error=1.0, state=state2, kp=0.0, ki=1.0, kd=0.0, integral_decay=1.0)
+    score2, _ = update_pid_score(error=1.0, state=state2, kp=0.0, ki=1.0, kd=0.0, integral_decay=1.0)
+    # integral accumulates: 1, 2, 3 => score = 3.0
+    assert abs(score2 - 3.0) < 1e-9
+
+
 def test_select_top_k_by_score() -> None:
     scores = {0: 0.2, 1: 1.5, 2: 1.5, 3: 0.1}
     # tie broken by smaller client_id first

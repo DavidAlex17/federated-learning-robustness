@@ -19,9 +19,21 @@ def cosine_direction_error(update: np.ndarray, reference: np.ndarray, eps: float
     return 1.0 - cosine, cosine
 
 
-def update_pid_score(error: float, state: dict, kp: float, ki: float, kd: float) -> tuple[float, dict]:
-    """Update PID state from a scalar error and return (score, new_state)."""
-    integral = float(state.get("integral", 0.0)) + float(error)
+def update_pid_score(
+    error: float,
+    state: dict,
+    kp: float,
+    ki: float,
+    kd: float,
+    integral_decay: float = 1.0,
+) -> tuple[float, dict]:
+    """Update PID state from a scalar error and return (score, new_state).
+
+    integral_decay < 1.0 applies exponential decay to the accumulated integral
+    (leaky integrator), so transient noise in early rounds does not permanently
+    penalise an otherwise-honest client.  decay=1.0 is the original behaviour.
+    """
+    integral = integral_decay * float(state.get("integral", 0.0)) + float(error)
     prev_error = float(state.get("prev_error", 0.0))
     derivative = float(error) - prev_error
     score = kp * float(error) + ki * integral + kd * derivative
