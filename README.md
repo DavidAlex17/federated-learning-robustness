@@ -1,30 +1,56 @@
 # Empirical Robustness Evaluation of Federated Learning under Poisoning Attacks
 
-## Project Status
-
 Controlled FL robustness testbed on MNIST using Flower + PyTorch. Supports FedAvg / TrimmedMean / Multi-Krum aggregation, deterministic sign-flip attack, PID-inspired exclusion defense, and IID vs non-IID (Dirichlet) partitioning. All runs are reproducible and write scoped artifacts under `experiments/results/<run_id>/`.
 
-## Quickstart: Smoke Run
+The focus is on understanding system behavior and failure modes under realistic assumptions — not on proposing new algorithms or achieving state-of-the-art accuracy.
+
+---
+
+## Module Layout
+
+```
+framework/
+  aggregators.py   — fedavg, trimmed_mean, multi_krum (pure NumPy)
+  attack.py        — select_malicious_client_ids, apply_signflip_attack
+  defense.py       — cosine_direction_error, update_pid_score, select_top_k_by_score
+  client.py        — Flower MnistClient
+  strategy.py      — RobustFedStrategy (aggregation dispatch + PID exclusion)
+data/
+  partition.py     — IID and Dirichlet partitioning
+  mnist.py         — MNIST loading + PartitionBundle dataclass
+model/
+  mlp.py           — MLP model + training/eval helpers
+experiments/
+  methods/fedavg.py — slim entry point: wires modules, writes debug CSVs
+  runner.py         — experiment dispatch
+  run_fedavg.py     — CLI entrypoint
+  run_smoke.py      — fast synthetic smoke run (used by CI)
+cfg/
+  project.yaml     — all config defaults
+  load_config.py   — path resolution and validation
+```
+
+---
+
+## Quickstart
+
+Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+### Smoke run (fast, no real FL)
 
 ```bash
 PYTHONPATH=. python experiments/run_smoke.py --run-id smoke-local --clean
 ```
 
-This generates lightweight artifacts at:
-
-- `experiments/results/smoke-local/metrics.csv`
-- `experiments/plots/smoke-local/smoke_synth_val_acc.png`
-
-## Quickstart: Tiny FedAvg (Flower + PyTorch)
+### FedAvg (Flower + PyTorch)
 
 ```bash
 PYTHONPATH=. python experiments/run_fedavg.py --run-id fedavg-local --clean
 ```
-
-This generates:
-
-- `experiments/results/fedavg-local/metrics.csv`
-- `experiments/plots/fedavg-local/fedavg_fedavg_val_acc.png`
 
 Aggregator variants:
 
@@ -33,26 +59,36 @@ PYTHONPATH=. python experiments/run_fedavg.py --run-id fedavg-trim --clean --agg
 PYTHONPATH=. python experiments/run_fedavg.py --run-id fedavg-krum --clean --aggregator multi_krum
 ```
 
-Partition variants (no config edit required):
+Partition variants:
 
 ```bash
-PYTHONPATH=. python experiments/run_fedavg.py --run-id iid-fedavg --clean --aggregator fedavg --partition iid
-PYTHONPATH=. python experiments/run_fedavg.py --run-id niid-fedavg --clean --aggregator fedavg --partition dirichlet --alpha 0.1
+PYTHONPATH=. python experiments/run_fedavg.py --run-id iid-clean --clean --partition iid
+PYTHONPATH=. python experiments/run_fedavg.py --run-id niid-clean --clean --partition dirichlet --alpha 0.1
 ```
 
-Attack example (off by default):
+Attack (sign-flip, off by default):
 
 ```bash
-PYTHONPATH=. python experiments/run_fedavg.py --run-id atk-fedavg --clean --aggregator fedavg --attack --malicious-fraction 0.5 --attack-scale 1.0
+PYTHONPATH=. python experiments/run_fedavg.py --run-id atk-fedavg --clean --attack --malicious-fraction 0.25 --attack-scale 1.0
 ```
 
-Attack + defense example:
+Attack + PID defense:
 
 ```bash
-PYTHONPATH=. python experiments/run_fedavg.py --run-id pid-atk-fedavg --clean --aggregator fedavg --attack --malicious-fraction 0.5 --defense --k-exclude 1 --kp 1.0 --ki 0.0 --kd 0.0
+PYTHONPATH=. python experiments/run_fedavg.py --run-id pid-atk-fedavg --clean --attack --malicious-fraction 0.25 --defense --k-exclude 2 --kp 1.0 --ki 0.0 --kd 0.0
 ```
 
-Metrics format is documented in **[experiments/metrics_schema.md](experiments/metrics_schema.md)**.
+---
+
+## Outputs
+
+Each run writes under `experiments/results/<run_id>/`:
+
+- `metrics.csv` — per-round: `round, client_fraction, train_loss, val_loss, val_acc, time_round_sec`
+- `run_meta.yaml` — full config snapshot
+- `agg_debug.csv`, `attack_debug.csv`, `defense_debug.csv`, `partition_debug.csv` — debug artifacts
+
+Metrics format is documented in [experiments/metrics_schema.md](experiments/metrics_schema.md).
 
 ### Generate comparison plots
 
@@ -60,53 +96,24 @@ Metrics format is documented in **[experiments/metrics_schema.md](experiments/me
 PYTHONPATH=. python experiments/plot_comparison.py
 ```
 
-Produces `experiments/plots/comparison_val_acc.png` and `comparison_val_loss.png` — IID vs non-IID, all three conditions (clean / attack / attack+defense) overlaid.
+Produces `experiments/plots/comparison_val_acc.png` and `comparison_val_loss.png` — IID vs non-IID, clean / attack / attack+defense overlaid.
 
-### Summarize runs (overwrite summary.csv)
+### Summarize all runs
 
 ```bash
-./.venv/bin/python experiments/summarize_runs.py
+PYTHONPATH=. python experiments/summarize_runs.py --minimal
 ```
 
-Writes a fresh summary report to `experiments/results/summary.csv`.
-
-This repository presents an empirical analysis of robustness and failure modes in federated learning under poisoning attacks. Federated learning is treated as the experimental environment, poisoning attacks as adversarial stressors, and the PID (Proportional–Integral–Derivative) mechanism is evaluated as a case-study anomaly-detection defense at the server.
-
-The focus is on understanding system behavior and limitations under realistic assumptions, not on proposing new algorithms or achieving state-of-the-art accuracy.
-
----
-
-## Overview
-
-Federated learning enables distributed model training without sharing raw client data, but it remains vulnerable to malicious clients that submit poisoned updates. This project studies that vulnerability through a controlled setup including:
-
-- A baseline federated learning system trained on FEMNIST
-- A representative poisoning attack
-- A PID-based anomaly-detection defense at the server
-
-The goal is to analyze training dynamics, defense behavior, and failure cases rather than optimize performance.
-
----
-
-## What This Project Demonstrates
-
-- How poisoning attacks affect federated learning dynamics over rounds  
-- When anomaly-detection defenses help and when they fail  
-- Sensitivity to non-IID data and early-round instability  
-- The tradeoffs introduced by server-side filtering mechanisms  
+Prints a compact ASCII table and writes `experiments/results/summary.csv`.
 
 ---
 
 ## Threat Model
 
-- **Adversary:** A subset of clients submits poisoned model updates.
+- **Adversary:** A fixed subset of clients submits sign-flipped poisoned updates.
 - **Server:** Aggregates updates and may apply PID-based anomaly detection.
 - **Visibility:** The server observes only model updates, not client data.
-
-**Assumptions:**
-- Attacks are fixed and non-adaptive.
-- Defenses operate solely on update statistics.
-- Clients otherwise follow the FL protocol.
+- Attacks are non-adaptive; defenses operate solely on update statistics.
 
 ---
 
@@ -131,47 +138,9 @@ flowchart LR
 
 ---
 
-## Implemented Scenarios
+## What This Project Demonstrates
 
-- **Baseline**  
-  Standard federated learning with all clients behaving honestly.
-
-- **Poisoning Attack**  
-  A fixed subset of clients submits poisoned updates; no defense is applied.
-
-- **PID Defense**  
-  The poisoning attack is present, and the server applies PID-based anomaly detection during aggregation.
-
----
-
-## Running Experiments
-
-Install dependencies:
-
-```bash
-pip install -r requirements.txt
-```
-
-### Run a baseline experiment
-
-```bash
-PYTHONPATH=. python experiments/baseline_fl.py \
-  --clients 10 --rounds 5 \
-  --out experiments/results/baseline.csv
-```
-
-Attack and defense modes are enabled via flags in the same script.  
-Use `--help` on experiment scripts for available options.
-
-### Generate plots
-
-```bash
-PYTHONPATH=. python experiments/plot_metrics.py \
-  --in experiments/results/baseline.csv \
-  --out experiments/plots/
-```
-
-## Outputs
-
-- **Results:** Per-round CSV logs written to `experiments/results/`
-- **Plots:** Accuracy, loss, and defense-behavior visualizations written to `experiments/plots/`
+- How poisoning attacks affect federated learning dynamics over rounds
+- When anomaly-detection defenses help and when they fail
+- Sensitivity to non-IID data and early-round instability
+- The tradeoffs introduced by server-side filtering mechanisms
