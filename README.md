@@ -6,6 +6,12 @@ The focus is on understanding system behavior and failure modes under realistic 
 
 ---
 
+## Research Question
+
+> **Does a PID-inspired Byzantine defense for Federated Learning maintain its effectiveness under non-IID data distributions, and what are the conditions under which it fails?**
+
+---
+
 ## Module Layout
 
 ```
