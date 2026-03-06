@@ -37,6 +37,8 @@ class RobustFedStrategy(fl.server.strategy.FedAvg):
         self.defense_cfg = defense_cfg
         self.defense_enabled = bool(defense_cfg.get("enabled", False))
         self.k_exclude = int(defense_cfg.get("k_exclude", 1))
+        self.threshold = float(defense_cfg.get("threshold", 0.5))
+        self.integral_decay = float(defense_cfg.get("integral_decay", 1.0))
         self.kp = float(defense_cfg.get("Kp", 1.0))
         self.ki = float(defense_cfg.get("Ki", 0.0))
         self.kd = float(defense_cfg.get("Kd", 0.0))
@@ -127,7 +129,7 @@ class RobustFedStrategy(fl.server.strategy.FedAvg):
         cosines = {}
         for cid, upd in zip(client_ids, updates):
             error, cosine = cosine_direction_error(upd, ref)
-            score, new_state = update_pid_score(error, self.pid_state.get(cid, {}), self.kp, self.ki, self.kd)
+            score, new_state = update_pid_score(error, self.pid_state.get(cid, {}), self.kp, self.ki, self.kd, self.integral_decay)
             self.pid_state[cid] = new_state
             scores[cid] = score
             cosines[cid] = cosine
@@ -135,7 +137,8 @@ class RobustFedStrategy(fl.server.strategy.FedAvg):
         excluded_ids = []
         if self.defense_enabled and server_round > self.warmup_rounds:
             k = max(0, min(self.k_exclude, len(results) - 1))
-            excluded_ids = select_top_k_by_score(scores, k)
+            candidates = select_top_k_by_score(scores, k)
+            excluded_ids = [cid for cid in candidates if scores[cid] > self.threshold]
 
         kept = []
         for pair, cid in zip(results, client_ids):

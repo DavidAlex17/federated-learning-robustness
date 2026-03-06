@@ -25,6 +25,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--attack-scale", type=float, default=None, help="Override attack scale")
     parser.add_argument("--defense", action="store_true", help="Enable PID-style exclusion defense")
     parser.add_argument("--k-exclude", type=int, default=None, help="Defense top-k exclusions")
+    parser.add_argument("--threshold", type=float, default=None, help="Defense score threshold (exclude only if score exceeds this)")
+    parser.add_argument("--integral-decay", type=float, default=None, help="Integral decay factor for PID (0<decay<=1.0; <1 prevents unbounded accumulation)")
     parser.add_argument("--kp", type=float, default=None, help="Defense Kp")
     parser.add_argument("--ki", type=float, default=None, help="Defense Ki")
     parser.add_argument("--kd", type=float, default=None, help="Defense Kd")
@@ -52,6 +54,10 @@ def main() -> None:
         cfg.setdefault("defense", {})["enabled"] = True
     if args.k_exclude is not None:
         cfg.setdefault("defense", {})["k_exclude"] = args.k_exclude
+    if args.threshold is not None:
+        cfg.setdefault("defense", {})["threshold"] = args.threshold
+    if args.integral_decay is not None:
+        cfg.setdefault("defense", {})["integral_decay"] = args.integral_decay
     if args.kp is not None:
         cfg.setdefault("defense", {})["Kp"] = args.kp
     if args.ki is not None:

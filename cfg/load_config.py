@@ -106,6 +106,8 @@ def validate_and_fill_defaults(cfg):
         "enabled": False,
         "type": "pid_exclusion",
         "k_exclude": 1,
+        "threshold": 0.5,
+        "integral_decay": 1.0,
         "Kp": 1.0,
         "Ki": 0.0,
         "Kd": 0.0,

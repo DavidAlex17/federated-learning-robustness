@@ -113,6 +113,8 @@ def _write_run_meta(
             "enabled": bool(defense_cfg.get("enabled", False)),
             "type": str(defense_cfg.get("type", "pid_exclusion")),
             "k_exclude": int(defense_cfg.get("k_exclude", 1)),
+            "threshold": float(defense_cfg.get("threshold", 0.5)),
+            "integral_decay": float(defense_cfg.get("integral_decay", 1.0)),
             "Kp": float(defense_cfg.get("Kp", 1.0)),
             "Ki": float(defense_cfg.get("Ki", 0.0)),
             "Kd": float(defense_cfg.get("Kd", 0.0)),
