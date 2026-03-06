@@ -67,8 +67,11 @@ def multi_krum(vectors: list[np.ndarray], f: int, m: int | None = None) -> np.nd
     if m <= 0 or m > n:
         raise ValueError("m must satisfy 1 <= m <= n")
 
-    diffs = arr[:, None, :] - arr[None, :, :]
-    dist2 = np.sum(diffs * diffs, axis=2)
+    # Compute pairwise squared distances row-by-row to avoid the (n, n, params)
+    # intermediate tensor that broadcasting would create — important for larger models.
+    dist2 = np.empty((n, n), dtype=np.float64)
+    for i in range(n):
+        dist2[i] = np.sum((arr - arr[i]) ** 2, axis=1)
 
     scores = []
     for i in range(n):
