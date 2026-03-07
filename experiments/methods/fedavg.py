@@ -130,7 +130,7 @@ def run_fedavg(config: dict, run_id: str, out_dir_results: str) -> tuple[list[di
     """Run FL with configurable robust aggregation; return metrics and plot tag."""
     _set_global_seed(int(config.get("seed", 42)))
 
-    rounds = int(config.get("rounds", 2))
+    rounds = int(config.get("rounds", 3))
     num_clients = int(config.get("clients", 4))
     client_fraction = float(config.get("client_fraction", 1.0))
     fit_clients = max(1, int(np.ceil(num_clients * client_fraction)))
