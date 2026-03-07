@@ -13,10 +13,8 @@ import torch
 import yaml
 
 from data.mnist import _build_partitioned_data
-from data.partition import _dirichlet_partition_indices, _partition_indices_iid
-from framework.attack import apply_signflip_attack, select_malicious_client_ids
+from framework.attack import select_malicious_client_ids
 from framework.client import MnistClient
-from framework.defense import cosine_direction_error, select_top_k_by_score, update_pid_score
 from framework.strategy import RobustFedStrategy
 
 
