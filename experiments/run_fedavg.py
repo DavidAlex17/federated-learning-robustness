@@ -19,6 +19,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-id", type=str, default=None, help="Run identifier")
     parser.add_argument("--clean", action="store_true", help="Delete run outputs before writing")
     parser.add_argument("--rounds", type=int, default=None, help="Optional rounds override")
+    parser.add_argument("--clients", type=int, default=None, help="Optional number of clients override")
     parser.add_argument("--aggregator", type=str, default=None, help="Optional aggregator override")
     parser.add_argument("--attack", action="store_true", help="Enable sign-flip attack")
     parser.add_argument("--malicious-fraction", type=float, default=None, help="Override attack malicious fraction")
@@ -41,6 +42,8 @@ def main() -> None:
     cfg = load_cfg(args.config)
     if args.rounds is not None:
         cfg["rounds"] = args.rounds
+    if args.clients is not None:
+        cfg["clients"] = args.clients
     if args.aggregator is not None:
         cfg.setdefault("server", {})["aggregator"] = args.aggregator
     if args.attack:
