@@ -31,15 +31,15 @@ def _apply_overrides(cfg: dict, run_def: dict) -> dict:
         cfg["rounds"] = int(run_def["rounds"])
 
     if "clients" in run_def:
-        cfg["num_clients"] = int(run_def["clients"])
+        cfg["clients"] = int(run_def["clients"])
 
     if "partition" in run_def:
         part = run_def["partition"]
-        cfg.setdefault("data", {})
+        cfg.setdefault("partition", {})
         if "type" in part:
-            cfg["data"]["partition"] = part["type"]
+            cfg["partition"]["type"] = part["type"]
         if "alpha" in part:
-            cfg["data"]["dirichlet_alpha"] = float(part["alpha"])
+            cfg["partition"]["alpha"] = float(part["alpha"])
 
     if "attack" in run_def:
         atk = run_def["attack"]
