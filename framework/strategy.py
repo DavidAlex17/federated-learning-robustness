@@ -12,6 +12,14 @@ from framework.aggregators import fedavg, multi_krum, trimmed_mean
 from framework.defense import cosine_direction_error, select_top_k_by_score, update_pid_score
 
 
+def _weighted_avg_val_acc(metrics: list[tuple[int, dict]]) -> dict:
+    total = sum(n for n, _ in metrics)
+    if total == 0:
+        return {}
+    val_acc = sum(n * float(m.get("val_acc", 0.0)) for n, m in metrics) / total
+    return {"val_acc": val_acc}
+
+
 class RobustFedStrategy(fl.server.strategy.FedAvg):
     def __init__(
         self,
@@ -22,7 +30,10 @@ class RobustFedStrategy(fl.server.strategy.FedAvg):
         malicious_ids: set[int],
         **kwargs,
     ):
-        super().__init__(**kwargs)
+        super().__init__(
+            evaluate_metrics_aggregation_fn=_weighted_avg_val_acc,
+            **kwargs,
+        )
         self.client_fraction = client_fraction
         self.aggregator = aggregator_cfg.get("aggregator", "fedavg")
         self.trim_ratio = float(aggregator_cfg.get("trim_ratio", 0.1))
