@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+from datetime import datetime
 from pathlib import Path
 
 import yaml
@@ -88,8 +89,12 @@ def main() -> None:
         return
 
     base_cfg = load()
-    out_dir_results = str(base_cfg["results_dir"])
-    out_dir_plots = str(base_cfg["plots_dir"])
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    out_dir_results = str(Path(base_cfg["results_dir"]) / timestamp)
+    out_dir_plots = str(Path(base_cfg["plots_dir"]) / timestamp)
+    Path(out_dir_results).mkdir(parents=True, exist_ok=True)
+    Path(out_dir_plots).mkdir(parents=True, exist_ok=True)
+    print(f"Batch folder: {timestamp}")
 
     total = len(runs)
     for idx, run_def in enumerate(runs, start=1):
