@@ -75,3 +75,59 @@ runs:
       type: pid_exclusion
       k_exclude: 2
       Kp: 1.0
+
+  # Aggregator comparison under attack (IID)
+  - run_id: iid-atk25-trim
+    rounds: 20
+    clients: 10
+    aggregator: trimmed_mean
+    partition:
+      type: iid
+    attack:
+      enabled: true
+      type: signflip
+      malicious_fraction: 0.25
+    defense:
+      enabled: false
+
+  - run_id: iid-atk25-krum
+    rounds: 20
+    clients: 10
+    aggregator: multi_krum
+    partition:
+      type: iid
+    attack:
+      enabled: true
+      type: signflip
+      malicious_fraction: 0.25
+    defense:
+      enabled: false
+
+  # Aggregator comparison under attack (non-IID)
+  - run_id: niid-atk25-trim
+    rounds: 20
+    clients: 10
+    aggregator: trimmed_mean
+    partition:
+      type: dirichlet
+      alpha: 0.1
+    attack:
+      enabled: true
+      type: signflip
+      malicious_fraction: 0.25
+    defense:
+      enabled: false
+
+  - run_id: niid-atk25-krum
+    rounds: 20
+    clients: 10
+    aggregator: multi_krum
+    partition:
+      type: dirichlet
+      alpha: 0.1
+    attack:
+      enabled: true
+      type: signflip
+      malicious_fraction: 0.25
+    defense:
+      enabled: false
