@@ -101,6 +101,20 @@ Attack + PID defense:
 PYTHONPATH=. python experiments/run_fedavg.py --run-id pid-atk-fedavg --clean --attack --malicious-fraction 0.25 --defense --k-exclude 2 --kp 1.0 --ki 0.0 --kd 0.0
 ```
 
+### Batch runner
+
+Instead of running experiments one by one with long CLI commands, you can define all runs in `experiments/batch_runs.yaml` and execute them all in sequence with a single command:
+
+```bash
+PYTHONPATH=. python experiments/run_batch.py
+```
+
+To use a custom batch file, pass `--batch` with the path to your YAML file:
+
+```bash
+PYTHONPATH=. python experiments/run_batch.py --batch path/to/file.yaml
+```
+
 ---
 
 ## Outputs
