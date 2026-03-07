@@ -1,5 +1,5 @@
 runs:
-  - run_id: iid-clean-20r
+  - run_id: iid-clean
     rounds: 20
     clients: 10
     partition:
@@ -9,7 +9,7 @@ runs:
     defense:
       enabled: false
 
-  - run_id: niid-clean-20r
+  - run_id: niid-clean
     rounds: 20
     clients: 10
     partition:
@@ -20,7 +20,7 @@ runs:
     defense:
       enabled: false
 
-  - run_id: iid-atk25-20r
+  - run_id: iid-atk25
     rounds: 20
     clients: 10
     partition:
@@ -32,7 +32,7 @@ runs:
     defense:
       enabled: false
 
-  - run_id: niid-atk25-20r
+  - run_id: niid-atk25
     rounds: 20
     clients: 10
     partition:
@@ -45,7 +45,7 @@ runs:
     defense:
       enabled: false
 
-  - run_id: iid-pid-atk25-20r
+  - run_id: iid-pid-atk25
     rounds: 20
     clients: 10
     partition:
@@ -60,7 +60,7 @@ runs:
       k_exclude: 2
       Kp: 1.0
 
-  - run_id: niid-pid-atk25-20r
+  - run_id: niid-pid-atk25
     rounds: 20
     clients: 10
     partition:
