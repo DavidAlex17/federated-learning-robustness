@@ -1,7 +1,7 @@
-pytest
-numpy
-matplotlib
-pyyaml
-flwr[simulation]~=1.26.1
-torch
-torchvision
+pytest==9.0.2
+numpy==2.4.2
+matplotlib==3.10.8
+PyYAML==6.0.3
+flwr[simulation]==1.26.1
+torch==2.10.0
+torchvision==0.25.0
