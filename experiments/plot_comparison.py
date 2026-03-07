@@ -64,7 +64,7 @@ def plot_comparison(results_root: Path, out_dir: Path, dpi: int = 130) -> None:
     ]:
         fig, axes = plt.subplots(1, 2, figsize=(11, 4.5), sharey=False)
         fig.suptitle(
-            f"{title_metric} — IID vs non-IID  |  FedAvg, 4 clients, 3 rounds, 25% sign-flip attack",
+            f"{title_metric} — IID vs non-IID  |  FedAvg, 25% sign-flip attack",
             fontsize=10, y=1.01,
         )
 
