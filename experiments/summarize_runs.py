@@ -130,7 +130,10 @@ def summarize_runs(
     glob_pattern: str | None = None,
     write_output: bool = True,
 ) -> list[dict]:
-    run_dirs = [p for p in results_root.iterdir() if p.is_dir()]
+    # Find every directory that contains a metrics.csv, regardless of nesting depth.
+    # This handles both flat single runs (results/<run_id>/) and batch runs
+    # (results/<timestamp>/<run_id>/).
+    run_dirs = [p.parent for p in results_root.rglob("metrics.csv")]
     if runs:
         allowed = set(runs)
         run_dirs = [p for p in run_dirs if p.name in allowed]
