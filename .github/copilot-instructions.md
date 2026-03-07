@@ -17,6 +17,10 @@ Short, actionable guidance for AI coding agents working in this repository. Focu
   - `experiments/runner.py` — dispatch layer: `run_experiment(config, run_id, out_dir_results, out_dir_plots, method)`.
   - `experiments/run_fedavg.py` — CLI entrypoint for all FL runs (aggregator, attack, defense, partition overrides).
   - `experiments/run_smoke.py` — fast synthetic smoke entrypoint (no real FL, used by CI).
+  - `experiments/run_batch.py` — batch runner: reads `experiments/batch_runs.yaml`, applies per-run overrides via `_apply_overrides()`, and calls `run_experiment()` for each run in sequence.
+  - `experiments/batch_runs.yaml` — canonical multi-run sweep definition (6 runs: iid/niid × clean/attack/attack+defense).
+  - `experiments/plot_comparison.py` — standalone CLI: generates IID vs non-IID comparison plots across run IDs.
+  - `experiments/summarize_runs.py` — standalone CLI: prints compact ASCII table and writes `experiments/results/summary.csv`.
   - `cfg/project.yaml` + `cfg/load_config.py` — all config defaults and path resolution.
 - Data: raw MNIST lives under `data/MNIST/`. Results written to `experiments/results/<run_id>/`, plots to `experiments/plots/<run_id>/`.
 - Flow for a real FL run: `run_fedavg.py` → `load_cfg()` → `run_experiment(method="fedavg")` → `fedavg.run_fedavg()` → Flower simulation with `RobustFedStrategy` → writes `metrics.csv`, `run_meta.yaml`, `agg_debug.csv`, `attack_debug.csv`, `defense_debug.csv`, `partition_debug.csv`.
@@ -55,6 +59,12 @@ PYTHONPATH=. python experiments/run_fedavg.py --run-id pid-atk-fedavg --rounds 5
 PYTHONPATH=. python experiments/run_fedavg.py --run-id niid-clean --rounds 5 \
   --partition dirichlet --alpha 0.1
 
+# Run all canonical batch experiments (defined in experiments/batch_runs.yaml)
+PYTHONPATH=. python experiments/run_batch.py
+
+# Run batch with a custom YAML file
+PYTHONPATH=. python experiments/run_batch.py --batch path/to/file.yaml
+
 # Summarize all runs (compact table)
 PYTHONPATH=. python experiments/summarize_runs.py --minimal
 
@@ -64,6 +74,7 @@ PYTHONPATH=. python -m pytest -q
 
 ## Project-specific conventions and patterns
 
+- **Batch overrides**: `_apply_overrides()` in `run_batch.py` maps batch YAML keys to the correct config paths: `clients` → `cfg["clients"]`, `partition.type` → `cfg["partition"]["type"]`, `partition.alpha` → `cfg["partition"]["alpha"]`. Do not use `cfg["num_clients"]` or `cfg["data"][...]` — those keys do not exist.
 - **Reproducibility**: always seed with `cfg["seed"]`; propagate to numpy, torch, python random. Attack client selection seeds from `attack.seed`.
 - **Config**: use `cfg.load_config.load()` — it converts `data_dir`/`results_dir`/`plots_dir` to absolute paths. Never construct paths manually.
 - **Schema**: `metrics.csv` columns are fixed: `round, client_fraction, train_loss, val_loss, val_acc, time_round_sec`. Do not add columns.
@@ -80,7 +91,7 @@ PYTHONPATH=. python -m pytest -q
 
 ## Dependencies & environment
 
-- Key packages: `torch`, `torchvision`, `flwr[simulation]`, `numpy`, `matplotlib`, `pyyaml`, `pytest`. See `requirements.txt`.
+- All packages are **pinned to exact versions** in `requirements.txt`: `torch==2.10.0`, `torchvision==0.25.0`, `flwr[simulation]==1.26.1`, `numpy==2.4.2`, `matplotlib==3.10.8`, `PyYAML==6.0.3`, `pytest==9.0.2`.
 - Dev Container (Python 3.11) is the recommended environment. If not using it: `pip install -r requirements.txt`.
 
 ## Quick troubleshooting hints
@@ -100,10 +111,12 @@ PYTHONPATH=. python -m pytest -q
 - `data/partition.py` — IID and Dirichlet partitioning
 - `data/mnist.py` — MNIST loading and PartitionBundle
 - `model/mlp.py` — MLP model and training/eval helpers
-- `experiments/methods/fedavg.py` — slim FL entry point (wires modules + debug writers)
+- `experiments/methods/fedavg.py` — slim FL entry point (wires modules + debug writers); only imports what it directly calls
 - `experiments/runner.py` — experiment dispatch
 - `experiments/run_fedavg.py` — canonical CLI entrypoint
 - `experiments/run_smoke.py` — fast smoke entrypoint (copy for new quick-check scripts)
+- `experiments/run_batch.py` — batch runner; use `_apply_overrides()` pattern for per-run config mutations
+- `experiments/batch_runs.yaml` — canonical sweep definition
 - `Makefile` — convenient targets
 
 ---
