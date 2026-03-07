@@ -19,6 +19,7 @@ from pathlib import Path
 import yaml
 
 from cfg.load_config import load
+from experiments.plot_comparison import plot_comparison
 from experiments.runner import run_experiment
 
 _DEFAULT_BATCH = Path(__file__).parent / "batch_runs.yaml"
@@ -113,6 +114,13 @@ def main() -> None:
         )
 
     print(f"Batch complete. {total} runs finished.")
+
+    print("Generating comparison plots...")
+    plot_comparison(
+        results_root=Path(out_dir_results),
+        out_dir=Path(out_dir_plots),
+    )
+    print(f"Comparison plots saved to {out_dir_plots}")
 
 
 if __name__ == "__main__":

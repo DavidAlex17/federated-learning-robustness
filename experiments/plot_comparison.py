@@ -23,14 +23,14 @@ import matplotlib.pyplot as plt
 
 RUNS = {
     "iid": {
-        "clean":   "iid-clean-fedavg",
-        "attack":  "iid-atk25-fedavg",
-        "defense": "iid-pid-atk25-fedavg",
+        "clean":   "iid-clean",
+        "attack":  "iid-atk25",
+        "defense": "iid-pid-atk25",
     },
     "niid": {
-        "clean":   "niid-clean-fedavg",
-        "attack":  "niid-atk25-fedavg",
-        "defense": "niid-pid-atk25-fedavg",
+        "clean":   "niid-clean",
+        "attack":  "niid-atk25",
+        "defense": "niid-pid-atk25",
     },
 }
 
