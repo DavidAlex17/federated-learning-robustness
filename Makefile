@@ -1,12 +1,14 @@
 setup:
 	pip install -r requirements.txt
 
-dry-run:
-	PYTHONPATH=. python experiments/baseline_fl.py --clients 5 --rounds 3 --out experiments/results/baseline.csv
-	PYTHONPATH=. python experiments/plot_metrics.py --in experiments/results/baseline.csv --out experiments/plots/
+batch:
+	PYTHONPATH=. python experiments/run_batch.py
 
-plots:
-	PYTHONPATH=. python experiments/plot_metrics.py --in experiments/results/baseline.csv --out experiments/plots/
+smoke:
+	PYTHONPATH=. python experiments/run_smoke.py --run-id smoke --clean
+
+test:
+	PYTHONPATH=. python -m pytest -q
 
 clean:
-	rm -f experiments/results/*.csv experiments/plots/*.{png,jpg,svg} 2>/dev/null || true
+	rm -rf experiments/results/*/ experiments/plots/*/ 2>/dev/null || true
