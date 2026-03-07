@@ -19,6 +19,7 @@ from pathlib import Path
 import yaml
 
 from cfg.load_config import load
+from experiments.plot_aggregator_comparison import plot_aggregator_comparison
 from experiments.plot_comparison import plot_comparison
 from experiments.runner import run_experiment
 
@@ -64,6 +65,9 @@ def _apply_overrides(cfg: dict, run_def: dict) -> dict:
             cfg["defense"]["k_exclude"] = int(dfn["k_exclude"])
         if "Kp" in dfn:
             cfg["defense"]["Kp"] = float(dfn["Kp"])
+
+    if "aggregator" in run_def:
+        cfg.setdefault("server", {})["aggregator"] = str(run_def["aggregator"])
 
     return cfg
 
@@ -121,6 +125,13 @@ def main() -> None:
         out_dir=Path(out_dir_plots),
     )
     print(f"Comparison plots saved to {out_dir_plots}")
+
+    print("Generating aggregator comparison plots...")
+    plot_aggregator_comparison(
+        results_root=Path(out_dir_results),
+        out_dir=Path(out_dir_plots),
+    )
+    print(f"Aggregator comparison plots saved to {out_dir_plots}")
 
 
 if __name__ == "__main__":
