@@ -17,12 +17,12 @@ Short, actionable guidance for AI coding agents working in this repository. Focu
   - `experiments/runner.py` — dispatch layer: `run_experiment(config, run_id, out_dir_results, out_dir_plots, method)`.
   - `experiments/run_fedavg.py` — CLI entrypoint for all FL runs (aggregator, attack, defense, partition overrides).
   - `experiments/run_smoke.py` — fast synthetic smoke entrypoint (no real FL, used by CI).
-  - `experiments/run_batch.py` — batch runner: reads `experiments/batch_runs.yaml`, applies per-run overrides via `_apply_overrides()`, and calls `run_experiment()` for each run in sequence.
+  - `experiments/run_batch.py` — batch runner: reads `experiments/batch_runs.yaml`, applies per-run overrides via `_apply_overrides()`, calls `run_experiment()` for each run in sequence, writes all outputs into a timestamped parent folder (`experiments/results/YYYY-MM-DD_HH-MM/<run_id>/`), and auto-generates comparison plots at the end.
   - `experiments/batch_runs.yaml` — canonical multi-run sweep definition (6 runs: iid/niid × clean/attack/attack+defense).
   - `experiments/plot_comparison.py` — standalone CLI: generates IID vs non-IID comparison plots across run IDs.
   - `experiments/summarize_runs.py` — standalone CLI: prints compact ASCII table and writes `experiments/results/summary.csv`.
   - `cfg/project.yaml` + `cfg/load_config.py` — all config defaults and path resolution.
-- Data: raw MNIST lives under `data/MNIST/`. Results written to `experiments/results/<run_id>/`, plots to `experiments/plots/<run_id>/`.
+- Data: raw MNIST lives under `data/MNIST/`. Single runs write to `experiments/results/<run_id>/` and `experiments/plots/<run_id>/`. Batch runs write to `experiments/results/<timestamp>/<run_id>/` and `experiments/plots/<timestamp>/<run_id>/`.
 - Flow for a real FL run: `run_fedavg.py` → `load_cfg()` → `run_experiment(method="fedavg")` → `fedavg.run_fedavg()` → Flower simulation with `RobustFedStrategy` → writes `metrics.csv`, `run_meta.yaml`, `agg_debug.csv`, `attack_debug.csv`, `defense_debug.csv`, `partition_debug.csv`.
 
 ## Key integration points (where to edit)
@@ -79,7 +79,7 @@ PYTHONPATH=. python -m pytest -q
 - **Config**: use `cfg.load_config.load()` — it converts `data_dir`/`results_dir`/`plots_dir` to absolute paths. Never construct paths manually.
 - **Schema**: `metrics.csv` columns are fixed: `round, client_fraction, train_loss, val_loss, val_acc, time_round_sec`. Do not add columns.
 - **Debug artifacts**: extra data goes into separate CSVs (`agg_debug.csv`, `attack_debug.csv`, `defense_debug.csv`, `partition_debug.csv`), not into `metrics.csv`.
-- **Run-scoped outputs**: every run writes under `experiments/results/<run_id>/` and `experiments/plots/<run_id>/`. Never write to a shared path.
+- **Run-scoped outputs**: single runs write under `experiments/results/<run_id>/` and `experiments/plots/<run_id>/`. Batch runs write under `experiments/results/<timestamp>/<run_id>/` and `experiments/plots/<timestamp>/<run_id>/`. Never write to a shared path.
 - **PYTHONPATH**: always run scripts with `PYTHONPATH=.` from repo root (or use the Makefile targets).
 - **Output dirs**: call `Path(...).mkdir(parents=True, exist_ok=True)` before writing any file.
 

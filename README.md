@@ -119,21 +119,25 @@ PYTHONPATH=. python experiments/run_batch.py --batch path/to/file.yaml
 
 ## Outputs
 
-Each run writes under `experiments/results/<run_id>/`:
+Each **single run** writes under `experiments/results/<run_id>/`:
 
 - `metrics.csv` — per-round: `round, client_fraction, train_loss, val_loss, val_acc, time_round_sec`
 - `run_meta.yaml` — full config snapshot
 - `agg_debug.csv`, `attack_debug.csv`, `defense_debug.csv`, `partition_debug.csv` — debug artifacts
 
+**Batch runs** write under `experiments/results/YYYY-MM-DD_HH-MM/<run_id>/` and generate comparison plots into `experiments/plots/YYYY-MM-DD_HH-MM/` automatically at the end.
+
 Metrics format is documented in [experiments/metrics_schema.md](experiments/metrics_schema.md).
 
-### Generate comparison plots
+### Generate comparison plots for a specific batch
+
+Comparison plots are auto-generated at the end of every `run_batch.py` run. To regenerate them for a past batch:
 
 ```bash
-PYTHONPATH=. python experiments/plot_comparison.py
+PYTHONPATH=. python experiments/plot_comparison.py \
+  --results-root experiments/results/2026-03-07_19-17 \
+  --out experiments/plots/2026-03-07_19-17
 ```
-
-Produces `experiments/plots/comparison_val_acc.png` and `comparison_val_loss.png` — IID vs non-IID, clean / attack / attack+defense overlaid.
 
 ### Summarize all runs
 
