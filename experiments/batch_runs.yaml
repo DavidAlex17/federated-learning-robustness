@@ -1,0 +1,77 @@
+runs:
+  - run_id: iid-clean-20r
+    rounds: 20
+    clients: 10
+    partition:
+      type: iid
+    attack:
+      enabled: false
+    defense:
+      enabled: false
+
+  - run_id: niid-clean-20r
+    rounds: 20
+    clients: 10
+    partition:
+      type: dirichlet
+      alpha: 0.1
+    attack:
+      enabled: false
+    defense:
+      enabled: false
+
+  - run_id: iid-atk25-20r
+    rounds: 20
+    clients: 10
+    partition:
+      type: iid
+    attack:
+      enabled: true
+      type: signflip
+      malicious_fraction: 0.25
+    defense:
+      enabled: false
+
+  - run_id: niid-atk25-20r
+    rounds: 20
+    clients: 10
+    partition:
+      type: dirichlet
+      alpha: 0.1
+    attack:
+      enabled: true
+      type: signflip
+      malicious_fraction: 0.25
+    defense:
+      enabled: false
+
+  - run_id: iid-pid-atk25-20r
+    rounds: 20
+    clients: 10
+    partition:
+      type: iid
+    attack:
+      enabled: true
+      type: signflip
+      malicious_fraction: 0.25
+    defense:
+      enabled: true
+      type: pid_exclusion
+      k_exclude: 2
+      Kp: 1.0
+
+  - run_id: niid-pid-atk25-20r
+    rounds: 20
+    clients: 10
+    partition:
+      type: dirichlet
+      alpha: 0.1
+    attack:
+      enabled: true
+      type: signflip
+      malicious_fraction: 0.25
+    defense:
+      enabled: true
+      type: pid_exclusion
+      k_exclude: 2
+      Kp: 1.0
