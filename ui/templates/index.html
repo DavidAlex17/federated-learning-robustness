@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FL Robustness Lab</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <!-- Chart.js 4.4.1 — no SRI to avoid silent load failures in dev -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"
+          crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+</head>
+<body>
+<div id="frame">
+
+  <div id="top-area">
+  <!-- ── TOP ROW: defense chart (left) + new run form (right) ── -->
+  <div id="top-row">
+    <div id="top-box-left">
+      <div class="section-label">DEFENSE — PRECISION &amp; RECALL PER ROUND</div>
+      <div id="defense-inner">
+        <div id="defense-empty-state">SELECT A PID RUN TO VIEW DEFENSE METRICS</div>
+        <div id="defense-chart-container" hidden>
+          <canvas id="defense-chart" role="img" aria-label="Defense precision and recall per round"></canvas>
+        </div>
+      </div>
+    </div>
+    <div id="top-box-right">
+      <div class="section-label">NEW RUN — CONFIGURE &amp; LAUNCH</div>
+      <div id="form-body">
+        <form id="new-run-form" autocomplete="off">
+          <div class="form-row">
+            <label for="f-rounds">ROUNDS</label>
+            <input id="f-rounds" name="rounds" type="number" min="1" max="200" value="20">
+          </div>
+          <div class="form-row">
+            <label for="f-clients">CLIENTS</label>
+            <input id="f-clients" name="clients" type="number" min="1" max="100" value="10">
+          </div>
+          <div class="form-row">
+            <label for="f-partition">PARTITION</label>
+            <select id="f-partition" name="partition_type">
+              <option value="iid">IID</option>
+              <option value="dirichlet">DIRICHLET</option>
+            </select>
+          </div>
+          <div class="form-row" id="row-alpha">
+            <label for="f-alpha">ALPHA</label>
+            <input id="f-alpha" name="alpha" type="number" step="0.01" min="0.01" max="10" value="0.1">
+          </div>
+          <div class="form-row form-check-row">
+            <label for="f-attack">ATTACK</label>
+            <input id="f-attack" name="attack_enabled" type="checkbox">
+          </div>
+          <div class="form-row" id="row-mal-frac">
+            <label for="f-malfrac">MAL FRACTION</label>
+            <input id="f-malfrac" name="malicious_fraction" type="number" step="0.05" min="0.05" max="0.9" value="0.25">
+          </div>
+          <div class="form-row form-check-row">
+            <label for="f-defense">DEFENSE</label>
+            <input id="f-defense" name="defense_enabled" type="checkbox">
+          </div>
+          <div class="form-row" id="row-defense-params">
+            <label for="f-kexclude">K EXCLUDE</label>
+            <input id="f-kexclude" name="k_exclude" type="number" min="1" max="10" value="2">
+          </div>
+          <div class="form-row" id="row-kp">
+            <label for="f-kp">Kp</label>
+            <input id="f-kp" name="Kp" type="number" step="0.1" min="0" max="10" value="1.0">
+          </div>
+          <button type="submit" id="run-batch-btn">RUN BATCH</button>
+          <div id="run-batch-status">READY</div>
+        </form>
+      </div>
+    </div>
+  </div><!-- /#top-row -->
+
+  <div id="mid-row">
+  <!-- ── SIDEBAR ────────────────────────────────────────────── -->
+  <aside id="sidebar">
+    <div class="section-label">RUNS</div>
+    <ul id="run-list" role="listbox" aria-label="Available runs"></ul>
+  </aside>
+
+  <!-- ── MAIN PANEL ─────────────────────────────────────────── -->
+  <main id="main">
+    <div id="status-bar" aria-live="polite" hidden></div>
+
+    <div id="no-selection" aria-live="polite">
+      ← SELECT A RUN FROM THE SIDEBAR
+    </div>
+
+    <div id="run-content" hidden>
+      <div id="run-title-bar">
+        <span id="run-title"></span>
+      </div>
+      <div id="meta-bar" role="list"></div>
+
+      <div class="section-label">VAL ACCURACY &amp; LOSS — PER ROUND</div>
+      <div id="chart-container">
+        <canvas id="acc-chart" role="img" aria-label="Validation accuracy per round"></canvas>
+      </div>
+
+      <div class="section-label">METRICS TABLE</div>
+      <div id="metrics-table-wrap">
+        <table id="metrics-table">
+          <thead>
+            <tr>
+              <th scope="col">ROUND</th>
+              <th scope="col">VAL ACC</th>
+              <th scope="col">VAL LOSS</th>
+              <th scope="col">TRAIN LOSS</th>
+              <th scope="col">TIME (s)</th>
+            </tr>
+          </thead>
+          <tbody id="metrics-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+  </div><!-- /#mid-row -->
+  </div><!-- /#top-area -->
+
+  <!-- ── FOOTER / SUMMARY TABLE ─────────────────────────────── -->
+  <footer id="footer">
+    <div class="section-label">SUMMARY — COMPARISON ACROSS ALL RUNS</div>
+    <div id="summary-table-wrap">
+      <table id="summary-table">
+        <thead>
+          <tr>
+            <th scope="col">RUN ID</th>
+            <th scope="col">BATCH</th>
+            <th scope="col">AGGREGATOR</th>
+            <th scope="col">PARTITION</th>
+            <th scope="col">ATTACK</th>
+            <th scope="col">DEFENSE</th>
+            <th scope="col">ROUNDS</th>
+            <th scope="col">CLIENTS</th>
+            <th scope="col">FINAL VAL ACC</th>
+            <th scope="col">FINAL VAL LOSS</th>
+          </tr>
+        </thead>
+        <tbody id="summary-tbody"></tbody>
+      </table>
+    </div>
+  </footer>
+
+</div><!-- /#frame -->
+
+  <script>
+    'use strict';
+
+    let activeChart = null;
+    let activeDefenseChart = null;
+    let activeRunId = null;
+    let activeBatch = null;
+
+    // ── Utilities ──────────────────────────────────────────────────────────
+
+    function pct(v) { return (v * 100).toFixed(1) + '%'; }
+    function fmt4(v) { return parseFloat(v).toFixed(4); }
+    function fmt2(v) { return parseFloat(v).toFixed(2); }
+
+    function setStatus(msg) {
+      const bar = document.getElementById('status-bar');
+      bar.textContent = msg;
+      bar.hidden = !msg;
+    }
+
+    // ── Sidebar: load run list ─────────────────────────────────────────────
+
+    async function loadRuns() {
+      setStatus('LOADING…');
+      let data;
+      try {
+        const res = await fetch('/api/runs');
+        if (!res.ok) throw new Error(res.statusText);
+        data = await res.json();
+      } catch (e) {
+        setStatus('ERROR LOADING RUNS');
+        return;
+      }
+
+      const list = document.getElementById('run-list');
+      list.innerHTML = '';
+
+      // Group by batch
+      const batches = {};
+      data.runs.forEach(r => {
+        (batches[r.batch] = batches[r.batch] || []).push(r.run_id);
+      });
+
+      // Render newest batch first
+      Object.keys(batches).sort().reverse().forEach(batch => {
+        const batchLi = document.createElement('li');
+        batchLi.className = 'batch-label';
+        batchLi.textContent = batch;
+        batchLi.setAttribute('aria-hidden', 'true');
+        list.appendChild(batchLi);
+
+        batches[batch].forEach(run_id => {
+          const li = document.createElement('li');
+          li.className = 'run-item';
+          li.textContent = run_id;
+          li.setAttribute('role', 'option');
+          li.setAttribute('data-run-id', run_id);
+          li.setAttribute('data-batch', batch);
+          li.setAttribute('tabindex', '0');
+          li.addEventListener('click', () => selectRun(run_id, batch));
+          li.addEventListener('keydown', e => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              selectRun(run_id, batch);
+            }
+          });
+          list.appendChild(li);
+        });
+      });
+
+      setStatus('');
+    }
+
+    // ── Summary footer table ───────────────────────────────────────────────
+
+    async function loadSummary() {
+      let rows;
+      try {
+        const res = await fetch('/api/summary');
+        if (!res.ok) throw new Error(res.statusText);
+        rows = await res.json();
+      } catch (e) {
+        document.getElementById('summary-tbody').innerHTML =
+          '<tr><td colspan="10">FAILED TO LOAD SUMMARY</td></tr>';
+        return;
+      }
+
+      const tbody = document.getElementById('summary-tbody');
+      tbody.innerHTML = '';
+
+      rows.forEach(r => {
+        const tr = document.createElement('tr');
+
+        const partLabel = r.partition === 'dirichlet'
+          ? `DIRICHLET α=${r.partition_alpha}`
+          : (r.partition || '').toUpperCase();
+
+        const atkLabel = r.attack_enabled
+          ? `YES — ${(r.attack_type || '').toUpperCase()} (${((r.malicious_fraction || 0) * 100).toFixed(0)}%)`
+          : 'NO';
+
+        const defLabel = r.defense_enabled
+          ? `YES — ${(r.defense_type || '').toUpperCase()} k=${r.k_exclude}`
+          : 'NO';
+
+        tr.innerHTML = `
+          <td class="run-id-cell" tabindex="0"
+              data-run-id="${escHtml(r.run_id)}"
+              data-batch="${escHtml(r.batch)}">${escHtml(r.run_id)}</td>
+          <td>${escHtml(r.batch)}</td>
+          <td>${escHtml(r.aggregator.toUpperCase())}</td>
+          <td>${partLabel}</td>
+          <td class="tag-cell ${r.attack_enabled ? 'atk-yes' : 'atk-no'}">${atkLabel}</td>
+          <td class="tag-cell ${r.defense_enabled ? 'def-yes' : 'def-no'}">${defLabel}</td>
+          <td>${escHtml(String(r.rounds))}</td>
+          <td>${escHtml(String(r.clients))}</td>
+          <td class="acc-cell">${pct(r.final_val_acc)}</td>
+          <td>${fmt4(r.final_val_loss)}</td>
+        `;
+
+        const cell = tr.querySelector('.run-id-cell');
+        const activate = () => selectRun(r.run_id, r.batch);
+        cell.addEventListener('click', activate);
+        cell.addEventListener('keydown', e => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); }
+        });
+
+        tbody.appendChild(tr);
+      });
+    }
+
+    // ── Run selection ──────────────────────────────────────────────────────
+
+    async function selectRun(run_id, batch) {
+      if (run_id === activeRunId && batch === activeBatch) return;
+      activeRunId = run_id;
+      activeBatch = batch;
+
+      // Highlight sidebar item
+      document.querySelectorAll('.run-item').forEach(el => {
+        const isThis = el.dataset.runId === run_id && el.dataset.batch === batch;
+        el.classList.toggle('active', isThis);
+        el.setAttribute('aria-selected', isThis ? 'true' : 'false');
+      });
+
+      // Highlight summary row
+      document.querySelectorAll('#summary-tbody tr').forEach(tr => {
+        const cell = tr.querySelector('.run-id-cell');
+        if (!cell) return;
+        tr.classList.toggle('active', cell.dataset.runId === run_id && cell.dataset.batch === batch);
+      });
+
+      setStatus('LOADING…');
+
+      let data;
+      try {
+        const url = `/api/run/${encodeURIComponent(batch)}/${encodeURIComponent(run_id)}`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(res.statusText);
+        data = await res.json();
+      } catch (e) {
+        setStatus('ERROR LOADING RUN');
+        return;
+      }
+
+      setStatus('');
+      renderRun(data);
+    }
+
+    function renderRun(data) {
+      document.getElementById('no-selection').hidden = true;
+      const content = document.getElementById('run-content');
+      content.hidden = false;
+
+      // Title
+      document.getElementById('run-title').textContent =
+        `RUN: ${data.run_id}  [BATCH: ${data.batch}]`;
+
+      // Meta tags
+      const m = data.meta || {};
+      const atk = m.attack || {};
+      const def = m.defense || {};
+      const part = m.partition || {};
+
+      const tags = [
+        { label: `AGG: ${(m.aggregator || '?').toUpperCase()}`, cls: '' },
+        { label: `PARTITION: ${(part.type || '?').toUpperCase()}${part.type === 'dirichlet' ? ' α=' + part.alpha : ''}`, cls: '' },
+        { label: `ROUNDS: ${m.rounds ?? '?'}`, cls: '' },
+        { label: `CLIENTS: ${m.clients ?? '?'}`, cls: '' },
+        atk.enabled
+          ? { label: `ATTACK: ${(atk.type || '').toUpperCase()} ${((atk.malicious_fraction || 0) * 100).toFixed(0)}% MAL`, cls: 'tag-attack' }
+          : { label: 'NO ATTACK', cls: 'tag-clean' },
+        def.enabled
+          ? { label: `DEFENSE: ${(def.type || '').toUpperCase()} k=${def.k_exclude}`, cls: 'tag-defense' }
+          : { label: 'NO DEFENSE', cls: 'tag-nodef' },
+      ];
+
+      const metaBar = document.getElementById('meta-bar');
+      metaBar.innerHTML = tags.map(t =>
+        `<span class="meta-tag ${t.cls}" role="listitem">${escHtml(t.label)}</span>`
+      ).join('');
+
+      // Defense panel — toggle empty state vs chart
+      const emptyState      = document.getElementById('defense-empty-state');
+      const defChartWrap    = document.getElementById('defense-chart-container');
+      if (def.enabled) {
+        emptyState.hidden   = true;
+        defChartWrap.hidden = false;
+        fetch(`/api/defense/${encodeURIComponent(data.batch)}/${encodeURIComponent(data.run_id)}`)
+          .then(r => r.ok ? r.json() : Promise.reject(r.statusText))
+          .then(d => requestAnimationFrame(() => renderDefenseChart(d.defense)))
+          .catch(() => {});
+      } else {
+        emptyState.hidden   = false;
+        defChartWrap.hidden = true;
+        if (activeDefenseChart) { activeDefenseChart.destroy(); activeDefenseChart = null; }
+      }
+
+      // Chart — defer one frame so the canvas has layout dimensions
+      requestAnimationFrame(() => renderChart(data.metrics));
+
+      // Metrics table
+      const tbody = document.getElementById('metrics-tbody');
+      tbody.innerHTML = '';
+      data.metrics.forEach(r => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${r.round}</td>
+          <td class="acc-cell">${pct(r.val_acc)}</td>
+          <td>${fmt4(r.val_loss)}</td>
+          <td>${fmt4(r.train_loss)}</td>
+          <td>${fmt2(r.time_round_sec)}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function renderChart(metrics) {
+      if (activeChart) {
+        activeChart.destroy();
+        activeChart = null;
+      }
+
+      const labels = metrics.map(r => r.round);
+      const valAcc = metrics.map(r => r.val_acc);
+      const valLoss = metrics.map(r => r.val_loss);
+
+      const ctx = document.getElementById('acc-chart').getContext('2d');
+      activeChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Val Accuracy',
+              data: valAcc,
+              borderColor: '#000000',
+              backgroundColor: 'rgba(0,0,0,0.06)',
+              borderWidth: 2.5,
+              pointRadius: 4,
+              pointBackgroundColor: '#000',
+              fill: true,
+              tension: 0,
+              yAxisID: 'yAcc',
+            },
+            {
+              label: 'Val Loss',
+              data: valLoss,
+              borderColor: '#666666',
+              backgroundColor: 'transparent',
+              borderWidth: 2,
+              borderDash: [6, 3],
+              pointRadius: 3,
+              pointBackgroundColor: '#666',
+              fill: false,
+              tension: 0,
+              yAxisID: 'yLoss',
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: { duration: 800, easing: 'easeInOutQuart' },
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: {
+              labels: {
+                font: { family: "'Courier New', monospace", size: 11 },
+                color: '#000',
+                boxWidth: 20,
+              },
+            },
+            tooltip: {
+              bodyFont: { family: "'Courier New', monospace" },
+              titleFont: { family: "'Courier New', monospace", weight: 'bold' },
+              backgroundColor: '#fff',
+              titleColor: '#000',
+              bodyColor: '#000',
+              borderColor: '#000',
+              borderWidth: 1,
+            },
+          },
+          scales: {
+            x: {
+              title: { display: true, text: 'ROUND', font: { family: "'Courier New', monospace", weight: 'bold', size: 11 }, color: '#000' },
+              grid: { color: '#e0e0e0' },
+              ticks: { font: { family: "'Courier New', monospace", size: 10 }, color: '#000' },
+            },
+            yAcc: {
+              position: 'left',
+              title: { display: true, text: 'VAL ACC', font: { family: "'Courier New', monospace", weight: 'bold', size: 11 }, color: '#000' },
+              grid: { color: '#e0e0e0' },
+              ticks: { font: { family: "'Courier New', monospace", size: 10 }, color: '#000', callback: v => (v * 100).toFixed(0) + '%' },
+              min: 0, max: 1,
+            },
+            yLoss: {
+              position: 'right',
+              title: { display: true, text: 'VAL LOSS', font: { family: "'Courier New', monospace", weight: 'bold', size: 11 }, color: '#666' },
+              grid: { drawOnChartArea: false },
+              ticks: { font: { family: "'Courier New', monospace", size: 10 }, color: '#666' },
+            },
+          },
+        },
+      });
+    }
+
+    function renderDefenseChart(defense) {
+      if (activeDefenseChart) {
+        activeDefenseChart.destroy();
+        activeDefenseChart = null;
+      }
+
+      const labels = defense.map(r => r.round);
+      const precision = defense.map(r => r.precision);
+      const recall = defense.map(r => r.recall);
+
+      const tooltipCfg = {
+        bodyFont: { family: "'Courier New', monospace" },
+        titleFont: { family: "'Courier New', monospace", weight: 'bold' },
+        backgroundColor: '#fff',
+        titleColor: '#000',
+        bodyColor: '#000',
+        borderColor: '#000',
+        borderWidth: 1,
+      };
+
+      const ctx = document.getElementById('defense-chart').getContext('2d');
+      activeDefenseChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Precision',
+              data: precision,
+              borderColor: '#000000',
+              backgroundColor: 'rgba(0,0,0,0.06)',
+              borderWidth: 2.5,
+              pointRadius: 4,
+              pointBackgroundColor: '#000',
+              fill: true,
+              tension: 0,
+            },
+            {
+              label: 'Recall',
+              data: recall,
+              borderColor: '#666666',
+              backgroundColor: 'transparent',
+              borderWidth: 2,
+              borderDash: [6, 3],
+              pointRadius: 3,
+              pointBackgroundColor: '#666',
+              fill: false,
+              tension: 0,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: { duration: 800, easing: 'easeInOutQuart' },
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: {
+              labels: {
+                font: { family: "'Courier New', monospace", size: 11 },
+                color: '#000',
+                boxWidth: 20,
+              },
+            },
+            tooltip: tooltipCfg,
+          },
+          scales: {
+            x: {
+              title: { display: true, text: 'ROUND', font: { family: "'Courier New', monospace", weight: 'bold', size: 11 }, color: '#000' },
+              grid: { color: '#e0e0e0' },
+              ticks: { font: { family: "'Courier New', monospace", size: 10 }, color: '#000' },
+            },
+            y: {
+              min: 0,
+              max: 1,
+              title: { display: true, text: 'SCORE', font: { family: "'Courier New', monospace", weight: 'bold', size: 11 }, color: '#000' },
+              grid: { color: '#e0e0e0' },
+              ticks: { font: { family: "'Courier New', monospace", size: 10 }, color: '#000', callback: v => (v * 100).toFixed(0) + '%' },
+            },
+          },
+        },
+      });
+    }
+
+    // ── XSS-safe HTML escaping ─────────────────────────────────────────────
+
+    function escHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    // ── New run form ──────────────────────────────────────────────────────
+
+    (function initNewRunForm() {
+      const partSel  = document.getElementById('f-partition');
+      const atkCheck = document.getElementById('f-attack');
+      const defCheck = document.getElementById('f-defense');
+
+      function syncVis() {
+        document.getElementById('row-alpha').style.display        = partSel.value === 'dirichlet' ? 'flex' : 'none';
+        document.getElementById('row-mal-frac').style.display     = atkCheck.checked ? 'flex' : 'none';
+        document.getElementById('row-defense-params').style.display = defCheck.checked ? 'flex' : 'none';
+        document.getElementById('row-kp').style.display           = defCheck.checked ? 'flex' : 'none';
+      }
+
+      partSel.addEventListener('change', syncVis);
+      atkCheck.addEventListener('change', syncVis);
+      defCheck.addEventListener('change', syncVis);
+      syncVis();
+
+      document.getElementById('new-run-form').addEventListener('submit', async e => {
+        e.preventDefault();
+        const btn    = document.getElementById('run-batch-btn');
+        const status = document.getElementById('run-batch-status');
+        btn.disabled = true;
+        status.textContent = 'RUNNING\u2026';
+        status.style.color = 'var(--gray)';
+
+        const payload = {
+          rounds:             parseInt(document.getElementById('f-rounds').value, 10),
+          clients:            parseInt(document.getElementById('f-clients').value, 10),
+          partition_type:     partSel.value,
+          alpha:              parseFloat(document.getElementById('f-alpha').value),
+          attack_enabled:     atkCheck.checked,
+          malicious_fraction: parseFloat(document.getElementById('f-malfrac').value),
+          defense_enabled:    defCheck.checked,
+          k_exclude:          parseInt(document.getElementById('f-kexclude').value, 10),
+          Kp:                 parseFloat(document.getElementById('f-kp').value),
+        };
+
+        try {
+          const res = await fetch('/api/run_batch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          if (!res.ok) throw new Error(await res.text());
+          const d = await res.json();
+          status.textContent = `STARTED \u2014 ${escHtml(d.run_id)}`;
+          status.style.color = 'var(--black)';
+        } catch (err) {
+          status.textContent = `ERROR: ${String(err.message).slice(0, 80)}`;
+          status.style.color = '#c00';
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    })();
+
+    // ── Bootstrap ─────────────────────────────────────────────────────────
+
+    loadRuns();
+    loadSummary();
+  </script>
+</body>
+</html>
