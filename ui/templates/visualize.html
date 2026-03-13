@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FL Robustness Lab — Visualize</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <!-- Chart.js 4.4.1 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"
+          crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+</head>
+<body>
+<div id="viz-frame">
+
+  <!-- ── Nav bar ── -->
+  <div id="viz-nav">
+    <a href="/" id="back-link">← DASHBOARD</a>
+    <span id="viz-page-title">VISUALIZE — GRADIENT &amp; SCORE ANALYSIS</span>
+  </div>
+
+  <!-- ── Run selector ── -->
+  <div id="selector-bar">
+    <label for="sel-batch">BATCH</label>
+    <select id="sel-batch">
+      <option value="">— LOADING… —</option>
+    </select>
+    <label for="sel-run">RUN</label>
+    <select id="sel-run" disabled>
+      <option value="">— SELECT BATCH FIRST —</option>
+    </select>
+    <button id="load-viz-btn" disabled>LOAD</button>
+    <span id="viz-status"></span>
+  </div>
+
+  <!-- ── 2 × 2 panel grid ── -->
+  <div id="panels-grid">
+
+    <!-- Panel 1 — Gradient direction arrows -->
+    <div class="panel-box" id="panel-arrows">
+      <div class="section-label">GRADIENT DIRECTION VECTORS — CLIENT UPDATES</div>
+      <div class="panel-inner" id="arrow-inner">
+        <div id="arrow-empty" class="panel-placeholder">SELECT A RUN TO VIEW</div>
+        <canvas id="arrow-canvas" hidden aria-label="Client gradient direction arrows"></canvas>
+      </div>
+      <div id="arrow-legend" hidden>
+        <div class="legend-item">
+          <span class="legend-swatch" style="background:#22aa44"></span>HONEST
+        </div>
+        <div class="legend-item">
+          <span class="legend-swatch" style="background:#cc2222"></span>FLAGGED
+        </div>
+        <div class="legend-item">
+          <span class="legend-swatch-outline"></span>ACTUAL ATTACKER (black outline)
+        </div>
+        <div class="legend-item legend-ref">
+          <span class="legend-swatch legend-swatch-dashed"></span>AGGREGATE REF
+        </div>
+      </div>
+      <div id="arrow-round-nav" hidden>
+        <button id="arrow-prev" class="round-btn" aria-label="Previous round">◀</button>
+        <span id="arrow-round-label">ROUND 1</span>
+        <button id="arrow-next" class="round-btn" aria-label="Next round">▶</button>
+      </div>
+    </div>
+
+    <!-- Panel 2 — PID score per client per round -->
+    <div class="panel-box" id="panel-pid">
+      <div class="section-label">PID SCORE — PER CLIENT PER ROUND</div>
+      <div class="panel-inner" id="pid-inner">
+        <div id="pid-empty" class="panel-placeholder">SELECT A RUN TO VIEW</div>
+        <div id="pid-chart-container" hidden>
+          <canvas id="pid-chart" role="img" aria-label="PID score per client per round"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Panel 3 — Precision / Recall / F1 grouped bar chart -->
+    <div class="panel-box" id="panel-prf">
+      <div class="section-label">PRECISION / RECALL / F1 — PER ROUND</div>
+      <div class="panel-inner" id="prf-inner">
+        <div id="prf-empty" class="panel-placeholder">SELECT A RUN TO VIEW</div>
+        <div id="prf-chart-container" hidden>
+          <canvas id="prf-chart" role="img" aria-label="Precision, recall and F1 per round"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Panel 4 — Excluded client heatmap -->
+    <div class="panel-box" id="panel-heatmap">
+      <div class="section-label">EXCLUDED CLIENT HEATMAP — BY ROUND</div>
+      <div class="panel-inner" id="heatmap-inner">
+        <div id="heatmap-empty" class="panel-placeholder">SELECT A RUN TO VIEW</div>
+        <canvas id="heatmap-canvas" hidden aria-label="Client exclusion heatmap by round"></canvas>
+      </div>
+    </div>
+
+  </div><!-- /#panels-grid -->
+
+</div><!-- /#viz-frame -->
+
+<script>
+'use strict';
+
+// ── State ──────────────────────────────────────────────────────────────────
+let vizData     = null;   // parsed /api/defense_scores response
+let defenseData = null;   // parsed /api/defense response (panel 3)
+let curRound    = 0;      // index into vizData.rounds
+let animId      = null;   // rAF handle for arrow animation
+let pidChart    = null;   // Chart.js instance for panel 2
+let prfChart    = null;   // Chart.js instance for panel 3
+
+// ── Utilities ──────────────────────────────────────────────────────────────
+function setVizStatus(msg) {
+  document.getElementById('viz-status').textContent = msg;
+}
+
+// ── Run selector ───────────────────────────────────────────────────────────
+async function loadRuns() {
+  let data;
+  try {
+    const res = await fetch('/api/runs');
+    if (!res.ok) throw new Error(res.statusText);
+    data = await res.json();
+  } catch (e) {
+    setVizStatus('ERROR LOADING RUNS');
+    return;
+  }
+
+  const batches = {};
+  data.runs.forEach(r => {
+    (batches[r.batch] = batches[r.batch] || []).push(r.run_id);
+  });
+
+  const batchSel = document.getElementById('sel-batch');
+  const runSel   = document.getElementById('sel-run');
+
+  const sortedBatches = Object.keys(batches).sort().reverse();
+
+  batchSel.innerHTML = '<option value="">— SELECT BATCH —</option>';
+  sortedBatches.forEach(b => {
+    const opt = document.createElement('option');
+    opt.value = b;
+    opt.textContent = b;
+    batchSel.appendChild(opt);
+  });
+
+  function populateRuns(batch) {
+    runSel.innerHTML = '<option value="">— SELECT RUN —</option>';
+    if (batch && batches[batch]) {
+      batches[batch].forEach(rid => {
+        const opt = document.createElement('option');
+        opt.value = rid;
+        opt.textContent = rid;
+        runSel.appendChild(opt);
+      });
+      runSel.disabled = false;
+    } else {
+      runSel.disabled = true;
+    }
+    updateLoadBtn();
+  }
+
+  batchSel.addEventListener('change', () => populateRuns(batchSel.value));
+  runSel.addEventListener('change', updateLoadBtn);
+
+  // Auto-select newest batch and its first run
+  if (sortedBatches.length > 0) {
+    batchSel.value = sortedBatches[0];
+    populateRuns(sortedBatches[0]);
+    if (batches[sortedBatches[0]].length > 0) {
+      runSel.value = batches[sortedBatches[0]][0];
+      updateLoadBtn();
+    }
+  }
+}
+
+function updateLoadBtn() {
+  const ok = !!document.getElementById('sel-batch').value &&
+             !!document.getElementById('sel-run').value;
+  document.getElementById('load-viz-btn').disabled = !ok;
+}
+
+// ── Load and render ────────────────────────────────────────────────────────
+document.getElementById('load-viz-btn').addEventListener('click', async () => {
+  const batch = document.getElementById('sel-batch').value;
+  const run   = document.getElementById('sel-run').value;
+  if (!batch || !run) return;
+
+  setVizStatus('LOADING…');
+  document.getElementById('load-viz-btn').disabled = true;
+
+  let data;
+  try {
+    const url = `/api/defense_scores/${encodeURIComponent(batch)}/${encodeURIComponent(run)}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(res.statusText);
+    data = await res.json();
+  } catch (e) {
+    setVizStatus('ERROR — NO SCORE DATA FOR THIS RUN');
+    document.getElementById('load-viz-btn').disabled = false;
+    return;
+  }
+
+  if (!data.rounds || data.rounds.length === 0) {
+    setVizStatus('NO ROUND DATA AVAILABLE');
+    document.getElementById('load-viz-btn').disabled = false;
+    return;
+  }
+
+  // Also fetch defense precision/recall for panel 3 (non-fatal if absent)
+  let defData = null;
+  try {
+    const defUrl = `/api/defense/${encodeURIComponent(batch)}/${encodeURIComponent(run)}`;
+    const defRes = await fetch(defUrl);
+    if (defRes.ok) defData = await defRes.json();
+  } catch (_) { /* non-fatal */ }
+
+  setVizStatus('');
+  document.getElementById('load-viz-btn').disabled = false;
+  vizData     = data;
+  defenseData = defData;
+  curRound    = data.rounds.length - 1; // start at last round
+
+  renderArrowPanel();
+  renderPIDPanel();
+  renderPRFPanel();
+  renderHeatmapPanel();
+});
+
+// ── Panel 1: Arrow canvas ──────────────────────────────────────────────────
+function renderArrowPanel() {
+  document.getElementById('arrow-empty').hidden  = true;
+  document.getElementById('arrow-canvas').hidden = false;
+  document.getElementById('arrow-legend').hidden = false;
+  document.getElementById('arrow-round-nav').hidden = false;
+  updateRoundLabel();
+  // Defer one frame so the canvas has layout dimensions after un-hiding
+  requestAnimationFrame(() => animateArrows());
+}
+
+function updateRoundLabel() {
+  document.getElementById('arrow-round-label').textContent =
+    `ROUND ${vizData.rounds[curRound].round}`;
+  document.getElementById('arrow-prev').disabled = (curRound <= 0);
+  document.getElementById('arrow-next').disabled = (curRound >= vizData.rounds.length - 1);
+}
+
+document.getElementById('arrow-prev').addEventListener('click', () => {
+  if (!vizData || curRound <= 0) return;
+  curRound--;
+  updateRoundLabel();
+  animateArrows();
+});
+
+document.getElementById('arrow-next').addEventListener('click', () => {
+  if (!vizData || curRound >= vizData.rounds.length - 1) return;
+  curRound++;
+  updateRoundLabel();
+  animateArrows();
+});
+
+function animateArrows() {
+  const canvas = document.getElementById('arrow-canvas');
+  const inner  = document.getElementById('arrow-inner');
+
+  // Size the drawing buffer to match the displayed area
+  const rect = inner.getBoundingClientRect();
+  canvas.width  = Math.max(1, Math.floor(rect.width));
+  canvas.height = Math.max(1, Math.floor(rect.height));
+
+  if (animId) { cancelAnimationFrame(animId); animId = null; }
+
+  const t0  = performance.now();
+  const dur = 650;
+
+  function frame(now) {
+    const t    = Math.min((now - t0) / dur, 1.0);
+    const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t; // ease-in-out
+    drawArrows(canvas, ease);
+    if (t < 1.0) animId = requestAnimationFrame(frame);
+  }
+  animId = requestAnimationFrame(frame);
+}
+
+function drawArrows(canvas, progress) {
+  const ctx = canvas.getContext('2d');
+  const W   = canvas.width;
+  const H   = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const cx = W / 2;
+  const cy = H / 2;
+  const arrowLen = Math.min(W, H) * 0.34 * progress;
+  if (arrowLen < 2) return;
+
+  const roundData  = vizData.rounds[curRound];
+  const malSet     = new Set(vizData.malicious_ids);
+  const excSet     = new Set(roundData.excluded_ids);
+
+  // Draw dashed reference arrow (aggregate direction = straight up)
+  ctx.save();
+  ctx.strokeStyle = '#aaaaaa';
+  ctx.lineWidth   = 1.5;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx, cy - arrowLen);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  // Reference arrowhead
+  ctx.fillStyle = '#aaaaaa';
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - arrowLen);
+  ctx.lineTo(cx - 5, cy - arrowLen + 11);
+  ctx.lineTo(cx + 5, cy - arrowLen + 11);
+  ctx.closePath();
+  ctx.fill();
+  // Label
+  ctx.font      = '9px "Courier New", monospace';
+  ctx.fillStyle = '#aaaaaa';
+  ctx.textAlign = 'center';
+  ctx.fillText('AGG', cx, cy - arrowLen - 7);
+  ctx.restore();
+
+  // Draw one arrow per client
+  roundData.clients.forEach(c => {
+    // angle from vertical ("up") = arccos(cosine_similarity)
+    // alternate left/right by client_id parity so arrows don't all overlap
+    const deviation = Math.acos(Math.max(-1.0, Math.min(1.0, c.cos)));
+    const side      = (c.client_id % 2 === 0) ? 1 : -1;
+    const angle     = -Math.PI / 2 + side * deviation; // -π/2 is straight up in canvas coords
+
+    const tipX = cx + arrowLen * Math.cos(angle);
+    const tipY = cy + arrowLen * Math.sin(angle);
+
+    const isMalicious = malSet.has(c.client_id);
+    const isExcluded  = excSet.has(c.client_id);
+
+    const fillColor   = isExcluded  ? '#cc2222' : '#22aa44';
+    const shaftColor  = isMalicious ? '#000000' : fillColor;
+    const shaftWidth  = isMalicious ? 2.5 : 1.5;
+
+    _drawArrow(ctx, cx, cy, tipX, tipY, fillColor, shaftColor, shaftWidth, isMalicious);
+
+    // Client ID label near the arrowhead tip
+    const labelDist = arrowLen + 14;
+    const lx = cx + labelDist * Math.cos(angle);
+    const ly = cy + labelDist * Math.sin(angle);
+    ctx.save();
+    ctx.font         = `bold 10px "Courier New", monospace`;
+    ctx.fillStyle    = shaftColor;
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(c.client_id), lx, ly);
+    ctx.restore();
+  });
+}
+
+function _drawArrow(ctx, x1, y1, x2, y2, fillColor, strokeColor, lineWidth, thickOutline) {
+  const dx  = x2 - x1;
+  const dy  = y2 - y1;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  if (len < 2) return;
+
+  const ux      = dx / len;
+  const uy      = dy / len;
+  const headLen = Math.min(13, len * 0.28);
+  const hw      = 5.5;
+
+  // Shaft
+  ctx.save();
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth   = lineWidth;
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2 - ux * headLen, y2 - uy * headLen);
+  ctx.stroke();
+
+  // Arrowhead
+  const hbx  = x2 - ux * headLen;
+  const hby  = y2 - uy * headLen;
+  const px   = -uy;
+  const py   = ux;
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(hbx + hw * px, hby + hw * py);
+  ctx.lineTo(hbx - hw * px, hby - hw * py);
+  ctx.closePath();
+  ctx.fillStyle = fillColor;
+  ctx.fill();
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth   = thickOutline ? 2.0 : 1.0;
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ── Panel 2: PID score line chart ──────────────────────────────────────────
+function renderPIDPanel() {
+  document.getElementById('pid-empty').hidden            = true;
+  document.getElementById('pid-chart-container').hidden  = false;
+
+  const malSet  = new Set(vizData.malicious_ids);
+  const rounds  = vizData.rounds.map(r => r.round);
+  const clients = (vizData.rounds[0]?.clients || []).map(c => c.client_id);
+
+  const datasets = clients.map(cid => {
+    const isMal = malSet.has(cid);
+    return {
+      label:           `C${cid}${isMal ? ' ★' : ''}`,
+      data:            vizData.rounds.map(r => (r.clients.find(c => c.client_id === cid) || {}).score ?? null),
+      borderColor:     isMal ? '#cc2222' : '#999999',
+      backgroundColor: 'transparent',
+      borderWidth:     isMal ? 2 : 1.5,
+      borderDash:      isMal ? [5, 4] : [],
+      pointRadius:     2,
+      pointHoverRadius: 4,
+      tension:         0.15,
+    };
+  });
+
+  if (pidChart) { pidChart.destroy(); pidChart = null; }
+
+  const ctx = document.getElementById('pid-chart').getContext('2d');
+  pidChart = new Chart(ctx, {
+    type: 'line',
+    data: { labels: rounds, datasets },
+    options: {
+      responsive:          true,
+      maintainAspectRatio: false,
+      animation:           { duration: 600 },
+      plugins: {
+        legend: {
+          display:  true,
+          position: 'right',
+          labels: {
+            font:     { family: "'Courier New', Courier, monospace", size: 10 },
+            color:    '#000000',
+            boxWidth: 22,
+            padding:  5,
+          },
+        },
+        tooltip: {
+          bodyFont:  { family: "'Courier New', Courier, monospace", size: 11 },
+          titleFont: { family: "'Courier New', Courier, monospace", size: 11 },
+        },
+      },
+      scales: {
+        x: {
+          title: {
+            display: true,
+            text:    'ROUND',
+            font:    { family: "'Courier New', Courier, monospace", size: 10, weight: 'bold' },
+            color:   '#000000',
+          },
+          ticks: { font: { family: "'Courier New', Courier, monospace", size: 10 }, color: '#000000' },
+          grid:  { color: '#cccccc' },
+        },
+        y: {
+          title: {
+            display: true,
+            text:    'PID SCORE',
+            font:    { family: "'Courier New', Courier, monospace", size: 10, weight: 'bold' },
+            color:   '#000000',
+          },
+          ticks: { font: { family: "'Courier New', Courier, monospace", size: 10 }, color: '#000000' },
+          grid:  { color: '#cccccc' },
+        },
+      },
+    },
+  });
+}
+
+// ── Panel 3: Precision / Recall / F1 grouped bar chart ───────────────────
+function renderPRFPanel() {
+  const emptyEl     = document.getElementById('prf-empty');
+  const containerEl = document.getElementById('prf-chart-container');
+
+  if (!defenseData || !defenseData.defense || defenseData.defense.length === 0) {
+    emptyEl.textContent = 'NO DEFENSE DATA FOR THIS RUN';
+    emptyEl.hidden      = false;
+    containerEl.hidden  = true;
+    return;
+  }
+
+  emptyEl.hidden     = true;
+  containerEl.hidden = false;
+
+  const rows   = defenseData.defense;
+  const labels = rows.map(r => r.round);
+  const prec   = rows.map(r => r.precision);
+  const rec    = rows.map(r => r.recall);
+  const f1     = rows.map(r => {
+    const p = r.precision, rc = r.recall;
+    return (p + rc > 0) ? 2 * p * rc / (p + rc) : 0;
+  });
+
+  if (prfChart) { prfChart.destroy(); prfChart = null; }
+
+  const monoFont = "'Courier New', Courier, monospace";
+  prfChart = new Chart(document.getElementById('prf-chart').getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'PRECISION', data: prec, backgroundColor: '#000000', barPercentage: 0.75, categoryPercentage: 0.8 },
+        { label: 'RECALL',    data: rec,  backgroundColor: '#555555', barPercentage: 0.75, categoryPercentage: 0.8 },
+        { label: 'F1',        data: f1,   backgroundColor: '#bbbbbb', barPercentage: 0.75, categoryPercentage: 0.8 },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 500 },
+      plugins: {
+        legend: {
+          display: true, position: 'top',
+          labels: { font: { family: monoFont, size: 10 }, color: '#000', boxWidth: 14, padding: 8 },
+        },
+        tooltip: {
+          bodyFont:  { family: monoFont, size: 11 },
+          titleFont: { family: monoFont, size: 11 },
+          callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y.toFixed(3)}` },
+        },
+      },
+      scales: {
+        x: {
+          title: { display: true, text: 'ROUND', font: { family: monoFont, size: 10, weight: 'bold' }, color: '#000' },
+          ticks: { font: { family: monoFont, size: 9 }, color: '#000' },
+          grid:  { display: false },
+        },
+        y: {
+          min: 0, max: 1,
+          title: { display: true, text: 'SCORE', font: { family: monoFont, size: 10, weight: 'bold' }, color: '#000' },
+          ticks: { font: { family: monoFont, size: 9 }, color: '#000', stepSize: 0.25 },
+          grid:  { color: '#cccccc' },
+        },
+      },
+    },
+  });
+}
+
+// ── Panel 4: Excluded client heatmap (canvas) ─────────────────────────────
+function renderHeatmapPanel() {
+  document.getElementById('heatmap-empty').hidden  = true;
+  document.getElementById('heatmap-canvas').hidden = false;
+  requestAnimationFrame(() => drawHeatmap());
+}
+
+function drawHeatmap() {
+  const canvas = document.getElementById('heatmap-canvas');
+  const inner  = document.getElementById('heatmap-inner');
+  const rect   = inner.getBoundingClientRect();
+  canvas.width  = Math.max(1, Math.floor(rect.width));
+  canvas.height = Math.max(1, Math.floor(rect.height));
+
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const rounds     = vizData.rounds;
+  const numRounds  = rounds.length;
+  const malSet     = new Set(vizData.malicious_ids);
+  const clientIds  = [...new Set(rounds.flatMap(r => r.clients.map(c => c.client_id)))].sort((a, b) => a - b);
+  const numClients = clientIds.length;
+  if (numRounds === 0 || numClients === 0) return;
+
+  const mL = 28, mT = 18, mR = 8, mB = 22;
+  const gridW = W - mL - mR;
+  const gridH = H - mT - mB;
+  const cellW = gridW / numRounds;
+  const cellH = gridH / numClients;
+  const FONT  = '9px "Courier New", monospace';
+
+  // Attacker row backgrounds (behind cells)
+  clientIds.forEach((cid, row) => {
+    if (malSet.has(cid)) {
+      ctx.fillStyle = '#e8e8e8';
+      ctx.fillRect(mL, mT + row * cellH, gridW, cellH);
+    }
+  });
+
+  // Cells: black = excluded, white = not excluded
+  rounds.forEach((rd, col) => {
+    const excSet = new Set(rd.excluded_ids);
+    clientIds.forEach((cid, row) => {
+      ctx.fillStyle = excSet.has(cid) ? '#000000' : '#ffffff';
+      ctx.fillRect(mL + col * cellW + 0.5, mT + row * cellH + 0.5, cellW - 1, cellH - 1);
+    });
+  });
+
+  // Grid lines
+  ctx.strokeStyle = '#cccccc';
+  ctx.lineWidth   = 0.5;
+  for (let c = 0; c <= numRounds;  c++) {
+    const x = mL + c * cellW;
+    ctx.beginPath(); ctx.moveTo(x, mT); ctx.lineTo(x, mT + gridH); ctx.stroke();
+  }
+  for (let r = 0; r <= numClients; r++) {
+    const y = mT + r * cellH;
+    ctx.beginPath(); ctx.moveTo(mL, y); ctx.lineTo(mL + gridW, y); ctx.stroke();
+  }
+
+  // Y-axis labels (client IDs); attackers in red
+  ctx.font = FONT; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  clientIds.forEach((cid, row) => {
+    ctx.fillStyle = malSet.has(cid) ? '#cc2222' : '#000000';
+    ctx.fillText(String(cid), mL - 4, mT + (row + 0.5) * cellH);
+  });
+
+  // X-axis labels (round numbers)
+  const every = numRounds <= 10 ? 1 : numRounds <= 20 ? 2 : 5;
+  ctx.fillStyle = '#000000'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  rounds.forEach((rd, col) => {
+    if (col % every !== 0) return;
+    ctx.fillText(String(rd.round), mL + (col + 0.5) * cellW, mT + gridH + 3);
+  });
+
+  // Axis titles
+  ctx.font = 'bold 9px "Courier New", monospace'; ctx.fillStyle = '#000000';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+  ctx.fillText('ROUND', mL + gridW / 2, H);
+  ctx.save();
+  ctx.translate(9, mT + gridH / 2); ctx.rotate(-Math.PI / 2);
+  ctx.textBaseline = 'top'; ctx.fillText('CLIENT', 0, 0);
+  ctx.restore();
+}
+
+// ── Resize: redraw canvas on window resize ─────────────────────────────────
+let resizeTimer = null;
+window.addEventListener('resize', () => {
+  if (resizeTimer) clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    if (vizData) { animateArrows(); drawHeatmap(); }
+  }, 120);
+});
+
+// ── Init ───────────────────────────────────────────────────────────────────
+loadRuns();
+</script>
+</body>
+</html>
