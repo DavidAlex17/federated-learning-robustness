@@ -16,7 +16,7 @@ RESULTS_DIR = PROJECT_ROOT / "experiments" / "results"
 PLOTS_DIR = PROJECT_ROOT / "experiments" / "plots"
 
 _BATCH_RE = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}$")
-
+_SCORE_RE = re.compile(r"(\d+):([0-9.]+)\(cos=(-?[0-9.]+)\)")
 
 def _batch_dirs() -> list[Path]:
     """Return sorted list of timestamped batch directories (oldest first)."""
@@ -65,6 +65,11 @@ def _find_run_dir(run_id: str, batch: str | None = None) -> tuple[str, Path]:
 @app.route("/")
 def index():
     return render_template("index.html")
+
+
+@app.route("/visualize")
+def visualize():
+    return render_template("visualize.html")
 
 
 # ---------------------------------------------------------------------------
@@ -195,6 +200,50 @@ def api_defense(batch_id: str, run_id: str):
                 "recall": float(row["recall"]),
             })
     return jsonify({"run_id": run_id, "batch": batch_name, "defense": rows})
+
+
+@app.route("/api/defense_scores/<batch_id>/<run_id>")
+def api_defense_scores(batch_id: str, run_id: str):
+    """Return per-client PID scores and cosine similarity per round."""
+    batch_name, run_dir = _find_run_dir(run_id, batch_id)
+    debug_path = run_dir / "defense_debug.csv"
+    if not debug_path.exists():
+        abort(404)
+
+    meta: dict = {}
+    meta_path = run_dir / "run_meta.yaml"
+    if meta_path.exists():
+        with open(meta_path) as f:
+            meta = yaml.safe_load(f) or {}
+
+    malicious_ids: list = meta.get("attack", {}).get("malicious_ids") or []
+
+    rounds = []
+    with open(debug_path, newline="") as f:
+        for row in csv.DictReader(f):
+            excluded_raw = row.get("excluded_ids", "") or ""
+            excluded_ids = [int(x) for x in excluded_raw.split("|") if x.strip()]
+
+            clients = []
+            for m in _SCORE_RE.finditer(row.get("scores", "") or ""):
+                clients.append({
+                    "client_id": int(m.group(1)),
+                    "score": float(m.group(2)),
+                    "cos": float(m.group(3)),
+                })
+
+            rounds.append({
+                "round": int(row["round"]),
+                "excluded_ids": excluded_ids,
+                "clients": clients,
+            })
+
+    return jsonify({
+        "run_id": run_id,
+        "batch": batch_name,
+        "malicious_ids": malicious_ids,
+        "rounds": rounds,
+    })
 
 
 @app.route("/api/run_batch", methods=["POST"])
